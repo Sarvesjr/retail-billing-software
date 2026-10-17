@@ -48,8 +48,6 @@ export default function PrintableBill({ bill, storeInfo = {}, onClose }) {
             {/* Store Header */}
             <div className="receipt-header">
               <div className="receipt-store-name">{storeInfo.name || 'SuperMart Retail Store'}</div>
-              <div className="receipt-meta-text">{storeInfo.address || 'Shop 12, Main Market Road, Bangalore - 560001'}</div>
-              <div className="receipt-meta-text">Phone: {storeInfo.phone || '+91 98765 43210'} | GSTIN: {storeInfo.gstin || '29AAAAA0000A1Z5'}</div>
               <div style={{ fontWeight: 800, marginTop: '0.4rem', letterSpacing: '0.05em' }}>RETAIL TAX INVOICE</div>
             </div>
 

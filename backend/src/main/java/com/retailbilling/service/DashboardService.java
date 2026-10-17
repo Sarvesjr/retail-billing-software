@@ -42,9 +42,6 @@ public class DashboardService {
     public Map<String, String> getStoreInfo() {
         Map<String, String> info = new HashMap<>();
         info.put("name", storeConfig.getName());
-        info.put("address", storeConfig.getAddress());
-        info.put("phone", storeConfig.getPhone());
-        info.put("gstin", storeConfig.getGstin());
         info.put("taxMode", storeConfig.getTaxMode());
         return info;
     }

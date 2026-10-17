@@ -11,9 +11,6 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('billing'); // Default to POS counter
   const [storeInfo, setStoreInfo] = useState({
     name: 'SuperMart Retail Store',
-    address: 'Shop 12, Main Market Road, Bangalore, Karnataka - 560001',
-    phone: '+91 98765 43210',
-    gstin: '29AAAAA0000A1Z5',
     taxMode: 'INTRA_STATE',
   });
   const [lowStockCount, setLowStockCount] = useState(0);
