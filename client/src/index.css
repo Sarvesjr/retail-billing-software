@@ -1,0 +1,124 @@
+@import "tailwindcss";
+
+@layer base {
+  body {
+    font-family: 'Mukta Malar', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-size: 13px;
+    line-height: 1.4;
+    background-color: #f3f4f6;
+    color: #1f2937;
+  }
+}
+
+/* Excel-Style Table Styling */
+.excel-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  background-color: #ffffff;
+}
+
+.excel-table th {
+  background-color: #e5e7eb;
+  color: #374151;
+  font-weight: 600;
+  text-align: left;
+  padding: 6px 8px;
+  border: 1px solid #d1d5db;
+  white-space: nowrap;
+}
+
+.excel-table td {
+  padding: 5px 8px;
+  border: 1px solid #e5e7eb;
+  vertical-align: middle;
+}
+
+.excel-table tr:nth-child(even) {
+  background-color: #f9fafb;
+}
+
+.excel-table tr:hover {
+  background-color: #f0fdf4;
+}
+
+.excel-table tr.selected {
+  background-color: #dbeafe !important;
+}
+
+/* Compact Forms & Buttons */
+.form-input {
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  padding: 4px 8px;
+  font-size: 13px;
+  background-color: #ffffff;
+  outline: none;
+}
+
+.form-input:focus {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 1px #2563eb;
+}
+
+.btn-primary {
+  background-color: #1e40af;
+  color: #ffffff;
+  border-radius: 3px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #1d4ed8;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-primary:hover {
+  background-color: #1d4ed8;
+}
+
+.btn-secondary {
+  background-color: #f3f4f6;
+  color: #374151;
+  border-radius: 3px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #d1d5db;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-secondary:hover {
+  background-color: #e5e7eb;
+}
+
+.btn-success {
+  background-color: #15803d;
+  color: #ffffff;
+  border-radius: 3px;
+  padding: 5px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border: 1px solid #166534;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.btn-success:hover {
+  background-color: #166534;
+}
+
+/* Numeric alignment */
+.num-cell {
+  text-align: right;
+  font-family: 'Roboto Mono', monospace;
+  font-variant-numeric: tabular-nums;
+}
+

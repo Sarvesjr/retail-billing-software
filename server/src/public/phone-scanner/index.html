@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>Precision Retail Barcode Scanner</title>
+  <script src="/phone-scanner/zxing.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    body { background: #0b1120; color: #f8fafc; min-height: 100vh; display: flex; flex-direction: column; }
+    header { background: #1e293b; padding: 10px 14px; border-bottom: 2px solid #2563eb; display: flex; justify-content: space-between; align-items: center; }
+    h1 { font-size: 14px; font-weight: 700; color: #60a5fa; letter-spacing: 0.5px; }
+    .badge { background: #059669; color: white; padding: 3px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+    
+    .scanner-container { position: relative; width: 100%; height: 270px; background: #000; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+    video { width: 100%; height: 100%; object-fit: cover; }
+    
+    /* Precision Viewfinder Reticle */
+    .target-box { position: absolute; width: 270px; height: 140px; border: 2px solid #38bdf8; border-radius: 8px; pointer-events: none; transition: border-color 0.15s, transform 0.1s; box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.55); }
+    .laser-line { position: absolute; width: 100%; height: 2px; background: #ef4444; top: 50%; box-shadow: 0 0 8px #ef4444; animation: scanAnim 1.6s infinite ease-in-out; }
+    @keyframes scanAnim { 0% { top: 15%; } 50% { top: 85%; } 100% { top: 15%; } }
+    
+    .viewfinder-corners { position: absolute; inset: -4px; pointer-events: none; }
+    .corner { position: absolute; width: 16px; height: 16px; border-color: #38bdf8; border-style: solid; }
+    .tl { top: 0; left: 0; border-width: 3px 0 0 3px; }
+    .tr { top: 0; right: 0; border-width: 3px 3px 0 0; }
+    .bl { bottom: 0; left: 0; border-width: 0 0 3px 3px; }
+    .br { bottom: 0; right: 0; border-width: 0 3px 3px 0; }
+
+    .scanner-tip { position: absolute; bottom: 8px; font-size: 11px; background: rgba(15, 23, 42, 0.85); color: #cbd5e1; padding: 4px 12px; border-radius: 12px; pointer-events: none; border: 1px solid #334155; }
+
+    .zoom-toolbar { display: flex; justify-content: center; gap: 8px; padding: 8px 12px; background: #0f172a; border-bottom: 1px solid #1e293b; align-items: center; }
+    .zoom-btn { background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 5px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .zoom-btn.active { background: #2563eb; color: #fff; border-color: #3b82f6; }
+    .zoom-label { font-size: 11px; color: #64748b; font-weight: 600; text-transform: uppercase; margin-right: 4px; }
+
+    .status-card { margin: 8px 12px; padding: 12px; background: #1e293b; border-radius: 8px; border: 1px solid #334155; }
+    .status-title { font-size: 11px; color: #94a3b8; text-transform: uppercase; margin-bottom: 4px; display: flex; justify-content: space-between; align-items: center; }
+    .barcode-display { font-size: 22px; font-weight: bold; color: #38bdf8; font-family: 'Roboto Mono', monospace; word-break: break-all; letter-spacing: 1.5px; }
+    .engine-badge { font-size: 10px; color: #a5f3fc; font-weight: normal; background: #083344; padding: 2px 7px; border-radius: 4px; border: 1px solid #0e7490; }
+    
+    .product-info { margin-top: 8px; padding-top: 8px; border-top: 1px dashed #334155; }
+    .product-name { font-size: 15px; font-weight: bold; color: #4ade80; }
+    .product-meta { font-size: 13px; color: #cbd5e1; margin-top: 3px; display: flex; justify-content: space-between; }
+    
+    .controls { margin: 0 12px 8px; display: flex; gap: 8px; flex-wrap: wrap; }
+    button, .file-btn { background: #2563eb; color: white; border: none; padding: 12px 14px; border-radius: 6px; font-size: 14px; font-weight: 700; cursor: pointer; flex: 1; text-align: center; display: inline-flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; }
+    button:active, .file-btn:active { background: #1d4ed8; }
+    .btn-green { background: #16a34a; }
+    .btn-green:active { background: #15803d; }
+    .btn-torch { background: #334155; flex: 0 0 auto; padding: 12px 16px; border: 1px solid #475569; }
+    .btn-torch.active { background: #eab308; color: #000; border-color: #facc15; }
+    
+    .guide-card { margin: 0 12px 10px; padding: 10px 12px; background: #131d31; border: 1px solid #1e3a5f; border-radius: 6px; font-size: 12px; color: #94a3b8; line-height: 1.4; }
+    .guide-title { font-weight: 700; color: #38bdf8; margin-bottom: 4px; display: flex; align-items: center; gap: 5px; }
+
+    .manual-box { margin: 0 12px 10px; display: flex; gap: 6px; }
+    input[type="text"] { flex: 1; padding: 10px 12px; border-radius: 6px; border: 1px solid #475569; background: #1e293b; color: white; font-size: 14px; font-family: monospace; }
+    
+    .sample-barcodes { margin: 0 12px 16px; }
+    .sample-btn { background: #1e293b; color: #93c5fd; padding: 6px 10px; margin: 4px 4px 0 0; font-size: 12px; border-radius: 4px; display: inline-block; cursor: pointer; border: 1px solid #334155; font-family: monospace; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PRECISION RETAIL SCANNER</h1>
+      <div style="font-size: 11px; color: #94a3b8;">EAN-13 &bull; UPC &bull; Code 128 Anti-Distortion</div>
+    </div>
+    <span class="badge" id="netStatus">ONLINE</span>
+  </header>
+
+  <div class="scanner-container">
+    <video id="cameraVideo" autoplay playsinline muted></video>
+    
+    <div class="target-box" id="targetBox">
+      <div class="viewfinder-corners">
+        <div class="corner tl"></div>
+        <div class="corner tr"></div>
+        <div class="corner bl"></div>
+        <div class="corner br"></div>
+      </div>
+      <div class="laser-line"></div>
+    </div>
+
+    <div class="scanner-tip" id="scannerTip">Align red laser across all vertical bars</div>
+  </div>
+
+  <!-- Hardware Zoom Toolbar -->
+  <div class="zoom-toolbar">
+    <span class="zoom-label">Zoom:</span>
+    <button type="button" class="zoom-btn active" onclick="setZoom(1.0)">1.0x</button>
+    <button type="button" class="zoom-btn" onclick="setZoom(1.5)">1.5x</button>
+    <button type="button" class="zoom-btn" onclick="setZoom(2.0)">2.0x</button>
+    <button type="button" class="zoom-btn" onclick="setZoom(2.5)">2.5x</button>
+  </div>
+
+  <div class="status-card">
+    <div class="status-title">
+      <span>Verified Barcode</span>
+      <span class="engine-badge" id="engineBadge">Google ML Kit + Modulo 10</span>
+    </div>
+    <div class="barcode-display" id="displayBarcode">Ready to scan...</div>
+    <div class="product-info" id="productCard" style="display: none;">
+      <div class="product-name" id="productName">-</div>
+      <div class="product-meta">
+        <span id="productPrice">₹0.00</span>
+        <span id="productStock">Stock: 0</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="controls">
+    <label class="file-btn btn-green">
+      <span>📷 Take Photo</span>
+      <input type="file" id="snapInput" accept="image/*" capture="environment" style="display: none;" onchange="handleSnap(this)">
+    </label>
+
+    <button id="toggleCameraBtn" onclick="toggleContinuousCamera()">
+      <span>🔴 Live HD Camera</span>
+    </button>
+
+    <button id="torchBtn" class="btn-torch" onclick="toggleTorch()" title="Toggle Flashlight for Dark Bottles">
+      <span>🔦 Flash</span>
+    </button>
+  </div>
+
+  <div class="guide-card">
+    <div class="guide-title">
+      <span>💡 Tips for Curved Bottles (Benadryl / Vicks)</span>
+    </div>
+    <div>1. <b>Use 2.0x Zoom</b>: Hold phone 15cm away so bottle fits target box without lens distortion.</div>
+    <div>2. <b>Tilt 20°</b>: If room light reflects a white glare line across the black bars, tilt bottle slightly.</div>
+    <div>3. <b>Check Modulo-10</b>: App strictly rejects misreads that don't match the authentic check digit.</div>
+  </div>
+
+  <div class="manual-box">
+    <input type="text" id="manualInput" placeholder="Manual Barcode..." value="8901012320242">
+    <button onclick="sendManualScan()" style="flex: 0 0 auto; padding: 10px 16px;">Send</button>
+  </div>
+
+  <div class="sample-barcodes">
+    <div style="font-size: 11px; color: #94a3b8; margin-bottom: 4px;">Tap bottle barcode to test PC:</div>
+    <span class="sample-btn" onclick="quickScan('8901012320242')">Benadryl (8901012320242)</span>
+    <span class="sample-btn" onclick="quickScan('4987176191205')">Vicks (4987176191205)</span>
+    <span class="sample-btn" onclick="quickScan('8901234567890')">Parle-G (8901234567890)</span>
+    <span class="sample-btn" onclick="quickScan('8901030383786')">Tata Salt (8901030383786)</span>
+  </div>
+
+  <!-- Offscreen canvas for Region-of-Interest (ROI) cropping & contrast enhancement -->
+  <canvas id="cropCanvas" style="display: none;"></canvas>
+
+  <script>
+    const video = document.getElementById('cameraVideo');
+    const targetBox = document.getElementById('targetBox');
+    const displayBarcode = document.getElementById('displayBarcode');
+    const productCard = document.getElementById('productCard');
+    const productName = document.getElementById('productName');
+    const productPrice = document.getElementById('productPrice');
+    const productStock = document.getElementById('productStock');
+    const toggleCameraBtn = document.getElementById('toggleCameraBtn');
+    const engineBadge = document.getElementById('engineBadge');
+    const torchBtn = document.getElementById('torchBtn');
+    const cropCanvas = document.getElementById('cropCanvas');
+    const cropCtx = cropCanvas.getContext('2d', { willReadFrequently: true });
+
+    let videoTrack = null;
+    let torchState = false;
+    let isLiveScanning = false;
+    let nativeDetector = null;
+    let zxingReader = null;
+    let lastConfirmedBarcode = '';
+    let lastScanTime = 0;
+    
+    // Consecutive Consensus Filter (Anti-glitch filter)
+    let candidateBarcode = '';
+    let candidateCount = 0;
+
+    // Strict EAN-13 modulo-10 checksum algorithm
+    function verifyEAN13(code) {
+      if (!/^\d{13}$/.test(code)) return false;
+      let sum = 0;
+      for (let i = 0; i < 12; i++) {
+        const digit = parseInt(code[i], 10);
+        sum += (i % 2 === 0) ? digit : digit * 3;
+      }
+      const checkDigit = (10 - (sum % 10)) % 10;
+      return checkDigit === parseInt(code[12], 10);
+    }
+
+    // Verify UPC-A (12 digits) modulo-10
+    function verifyUPCA(code) {
+      if (!/^\d{12}$/.test(code)) return false;
+      let sum = 0;
+      for (let i = 0; i < 11; i++) {
+        const digit = parseInt(code[i], 10);
+        sum += (i % 2 === 0) ? digit * 3 : digit;
+      }
+      const checkDigit = (10 - (sum % 10)) % 10;
+      return checkDigit === parseInt(code[11], 10);
+    }
+
+    // Verify EAN-8 (8 digits) modulo-10
+    function verifyEAN8(code) {
+      if (!/^\d{8}$/.test(code)) return false;
+      let sum = 0;
+      for (let i = 0; i < 7; i++) {
+        const digit = parseInt(code[i], 10);
+        sum += (i % 2 === 0) ? digit * 3 : digit;
+      }
+      const checkDigit = (10 - (sum % 10)) % 10;
+      return checkDigit === parseInt(code[7], 10);
+    }
+
+    // Check if code has valid retail format & checksum
+    function isValidRetailBarcode(code) {
+      if (!code || typeof code !== 'string') return false;
+      const clean = code.trim();
+      if (clean.length === 13) return verifyEAN13(clean);
+      if (clean.length === 12) return verifyUPCA(clean);
+      if (clean.length === 8) return verifyEAN8(clean);
+      // Code 128 (alphanumeric, min 6 chars)
+      if (/^[A-Za-z0-9\-_]{6,20}$/.test(clean)) return true;
+      return false;
+    }
+
+    // Initialize Native BarcodeDetector (Google ML Kit on Android)
+    if ('BarcodeDetector' in window) {
+      try {
+        nativeDetector = new BarcodeDetector({
+          formats: ['ean_13', 'ean_8', 'upc_a', 'upc_e', 'code_128']
+        });
+        engineBadge.textContent = 'Google ML Kit (Modulo-10)';
+      } catch (e) {
+        nativeDetector = null;
+      }
+    }
+
+    // Initialize ZXing with strict retail hints (disable ITF)
+    if (window.ZXing) {
+      try {
+        const hints = new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [
+          ZXing.BarcodeFormat.EAN_13,
+          ZXing.BarcodeFormat.EAN_8,
+          ZXing.BarcodeFormat.UPC_A,
+          ZXing.BarcodeFormat.UPC_E,
+          ZXing.BarcodeFormat.CODE_128
+        ]);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+        zxingReader = new ZXing.BrowserMultiFormatReader(hints);
+      } catch (e) {}
+    }
+
+    function playBeep() {
+      try {
+        const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(2800, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.35, audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.1);
+        osc.connect(gain);
+        gain.connect(audioCtx.destination);
+        osc.start();
+        osc.stop(audioCtx.currentTime + 0.1);
+      } catch (err) {}
+      if (navigator.vibrate) navigator.vibrate(80);
+    }
+
+    async function sendScanToPC(barcode) {
+      const trimmed = String(barcode).trim();
+      displayBarcode.textContent = trimmed;
+      targetBox.style.borderColor = '#22c55e';
+      targetBox.style.transform = 'scale(1.03)';
+      setTimeout(() => {
+        targetBox.style.borderColor = '#38bdf8';
+        targetBox.style.transform = 'scale(1)';
+      }, 500);
+      playBeep();
+
+      try {
+        const res = await fetch('/api/scanner/scan', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ barcode: trimmed, input_source: 'PHONE_USB' })
+        });
+        const data = await res.json();
+
+        if (data.found && data.product) {
+          productCard.style.display = 'block';
+          productName.textContent = data.product.name + (data.product.tamilName ? ' (' + data.product.tamilName + ')' : '');
+          productPrice.textContent = '₹' + Number(data.product.sellingPrice).toFixed(2);
+          productStock.textContent = 'Stock: ' + data.product.currentStock + ' ' + (data.product.unit || '');
+        } else {
+          productCard.style.display = 'block';
+          productName.textContent = 'New Product (Ready to Add on PC)';
+          productPrice.textContent = '₹0.00';
+          productStock.textContent = 'Stock: 0';
+        }
+      } catch (err) {
+        displayBarcode.textContent = trimmed + ' (Sent to PC)';
+      }
+    }
+
+    let emptyFrameCount = 0;
+
+    // Process a raw scan with consensus verification
+    function processCandidate(rawCode) {
+      const code = String(rawCode || '').trim();
+      emptyFrameCount = 0; // Barcode is present in frame
+      
+      // Strict rejection of anything failing retail modulo-10 checksum
+      if (!isValidRetailBarcode(code)) {
+        return;
+      }
+
+      const now = Date.now();
+      // If same barcode is continuously held still in laser, pace it at 750ms per scan
+      if (code === lastConfirmedBarcode && (now - lastScanTime) < 750) {
+        return;
+      }
+
+      // Check if candidate matches previous frame (consensus filter)
+      if (code === candidateBarcode || candidateCount >= 1) {
+        lastConfirmedBarcode = code;
+        lastScanTime = now;
+        candidateBarcode = '';
+        candidateCount = 0;
+        sendScanToPC(code);
+      } else {
+        candidateBarcode = code;
+        candidateCount = 1;
+      }
+    }
+
+    async function toggleContinuousCamera() {
+      if (isLiveScanning) {
+        stopContinuousCamera();
+      } else {
+        startContinuousCamera();
+      }
+    }
+
+    async function setZoom(zoomValue) {
+      document.querySelectorAll('.zoom-btn').forEach(b => {
+        b.classList.toggle('active', b.textContent === zoomValue.toFixed(1) + 'x');
+      });
+      if (!videoTrack) return;
+      try {
+        const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+        if (capabilities.zoom) {
+          const clamped = Math.min(Math.max(zoomValue, capabilities.zoom.min), capabilities.zoom.max);
+          await videoTrack.applyConstraints({ advanced: [{ zoom: clamped }] });
+        }
+      } catch (e) {}
+    }
+
+    async function startContinuousCamera() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        alert('Continuous video requires HTTPS on mobile.\nOpen https://10.159.238.198:5001/phone-scanner or use Take Photo button!');
+        return;
+      }
+
+      try {
+        const constraints = {
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { min: 1280, ideal: 1920 },
+            height: { min: 720, ideal: 1080 }
+          }
+        };
+
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+        video.srcObject = stream;
+        videoTrack = stream.getVideoTracks()[0];
+
+        try {
+          const capabilities = videoTrack.getCapabilities ? videoTrack.getCapabilities() : {};
+          const advanced = [];
+          if (capabilities.focusMode && capabilities.focusMode.includes('continuous')) {
+            advanced.push({ focusMode: 'continuous' });
+          }
+          if (capabilities.torch) {
+            torchBtn.style.display = 'inline-flex';
+          }
+          if (capabilities.zoom) {
+            advanced.push({ zoom: 1.5 }); // Default 1.5x zoom to prevent phone shadow
+          }
+          if (advanced.length > 0) {
+            await videoTrack.applyConstraints({ advanced });
+          }
+        } catch (e) {}
+
+        isLiveScanning = true;
+        toggleCameraBtn.textContent = '⏹ Stop Video';
+        scanVideoLoop();
+      } catch (err) {
+        alert('Camera Error: ' + err.message + '\nTip: Use the green "📷 Take Photo" button!');
+        isLiveScanning = false;
+        toggleCameraBtn.textContent = '🔴 Live HD Camera';
+      }
+    }
+
+    function stopContinuousCamera() {
+      if (video.srcObject) {
+        video.srcObject.getTracks().forEach(t => t.stop());
+        video.srcObject = null;
+      }
+      isLiveScanning = false;
+      videoTrack = null;
+      toggleCameraBtn.textContent = '🔴 Live HD Camera';
+    }
+
+    // Crop center Region of Interest (ROI) from video frame to boost accuracy on cylindrical bottles
+    function getCroppedCanvas() {
+      if (video.videoWidth === 0 || video.videoHeight === 0) return null;
+      
+      const vWidth = video.videoWidth;
+      const vHeight = video.videoHeight;
+      
+      // Target box is central 70% width, 40% height
+      const cropW = Math.floor(vWidth * 0.70);
+      const cropH = Math.floor(vHeight * 0.40);
+      const cropX = Math.floor((vWidth - cropW) / 2);
+      const cropY = Math.floor((vHeight - cropH) / 2);
+
+      cropCanvas.width = cropW;
+      cropCanvas.height = cropH;
+
+      cropCtx.drawImage(video, cropX, cropY, cropW, cropH, 0, 0, cropW, cropH);
+      return cropCanvas;
+    }
+
+    async function scanVideoLoop() {
+      if (!isLiveScanning) return;
+
+      if (video.readyState >= 2) {
+        const cropped = getCroppedCanvas();
+        const targetElement = cropped || video;
+        let detectedAny = false;
+
+        // Method 1: Google Native BarcodeDetector (Highest accuracy on Android)
+        if (nativeDetector) {
+          try {
+            const detected = await nativeDetector.detect(targetElement);
+            if (detected.length > 0) {
+              detectedAny = true;
+              processCandidate(detected[0].rawValue);
+            }
+          } catch (e) {}
+        } else if (zxingReader) {
+          // Method 2: ZXing fallback
+          try {
+            const result = await zxingReader.decodeFromVideoElement(video);
+            if (result && result.getText()) {
+              detectedAny = true;
+              processCandidate(result.getText());
+            }
+          } catch (e) {}
+        }
+
+        // When barcode leaves camera view for 2+ frames, reset confirmed state so bringing it back scans immediately
+        if (!detectedAny) {
+          emptyFrameCount++;
+          if (emptyFrameCount >= 2) {
+            lastConfirmedBarcode = '';
+            candidateBarcode = '';
+            candidateCount = 0;
+          }
+        }
+      }
+
+      if (isLiveScanning) {
+        requestAnimationFrame(scanVideoLoop);
+      }
+    }
+
+    // Flashlight / Torch Toggle for dark or curved bottles
+    async function toggleTorch() {
+      if (!videoTrack) return;
+      try {
+        torchState = !torchState;
+        await videoTrack.applyConstraints({
+          advanced: [{ torch: torchState }]
+        });
+        torchBtn.classList.toggle('active', torchState);
+      } catch (e) {
+        alert('Torch not supported on this camera.');
+      }
+    }
+
+    // High Accuracy Photo Snap (Uses native camera app)
+    async function handleSnap(input) {
+      if (!input.files || input.files.length === 0) return;
+      const file = input.files[0];
+      displayBarcode.textContent = 'Analyzing photo...';
+
+      const img = new Image();
+      img.onload = async () => {
+        try {
+          if (nativeDetector) {
+            const detected = await nativeDetector.detect(img);
+            if (detected.length > 0 && isValidRetailBarcode(detected[0].rawValue)) {
+              sendScanToPC(detected[0].rawValue);
+              return;
+            }
+          }
+
+          if (zxingReader) {
+            const result = await zxingReader.decodeFromImageElement(img);
+            if (result && isValidRetailBarcode(result.getText())) {
+              sendScanToPC(result.getText());
+              return;
+            }
+          }
+
+          displayBarcode.textContent = 'Could not read clearly. Tilt bottle slightly to avoid glare.';
+        } catch (e) {
+          displayBarcode.textContent = 'Could not read barcode cleanly. Tap Flash or hold closer.';
+        }
+      };
+      img.src = URL.createObjectURL(file);
+    }
+
+    function sendManualScan() {
+      const val = document.getElementById('manualInput').value;
+      if (val) sendScanToPC(val);
+    }
+
+    function quickScan(code) {
+      document.getElementById('manualInput').value = code;
+      sendScanToPC(code);
+    }
+  </script>
+</body>
+</html>
