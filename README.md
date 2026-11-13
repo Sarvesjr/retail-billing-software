@@ -59,8 +59,8 @@ Transform any smartphone camera into a wireless barcode scanner—no external ha
 
 ### 1. Clone the Repository
 ```bash
-git clone https://github.com/Sarvesjr/retail-billing-system.git
-cd retail-billing-system
+git clone https://github.com/Sarvesjr/retail-billing-software.git
+cd retail-billing-software
 ```
 
 ### 2. Install Dependencies
