@@ -28,7 +28,7 @@ export function Sidebar() {
     { to: '/', label: t('dashboard'), icon: LayoutDashboard, shortcut: 'F1' },
     { to: '/billing', label: t('billing'), icon: ReceiptText, shortcut: 'F2', highlight: true },
     { to: '/products', label: t('products'), icon: Package, shortcut: 'F3' },
-    { to: '/diagnostic', label: t('barcodeDiagnostic'), icon: ScanBarcode, shortcut: 'F4', badge: 'Test' },
+    { to: '/bills', label: t('previousBills'), icon: ReceiptText, shortcut: 'F4' },
     { to: '/categories', label: t('categories'), icon: FolderTree },
     { to: '/barcodes', label: t('barcodeManagement'), icon: Barcode },
     { to: '/purchases', label: t('purchases'), icon: Truck },

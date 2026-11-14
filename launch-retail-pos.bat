@@ -39,3 +39,4 @@ echo       To close the app, simply click the [X] button on the window.
 echo.
 
 npm run dev
+

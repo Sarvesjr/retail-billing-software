@@ -52,9 +52,26 @@ export const api = {
   createUnit: (data) => fetchApi('/units', { method: 'POST', body: JSON.stringify(data) }),
   updateUnit: (id, data) => fetchApi(`/units/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
-  // Sales & POS
+  // Sales & POS & Previous Bills
   createSale: (saleData) => fetchApi('/sales', { method: 'POST', body: JSON.stringify(saleData) }),
-  getSales: (limit = 20) => fetchApi(`/sales?limit=${limit}`),
+  getSales: (params = {}) => {
+    if (typeof params === 'number') {
+      return fetchApi(`/sales?limit=${params}`);
+    }
+    const cleanParams = {};
+    Object.keys(params).forEach(k => {
+      if (params[k] !== undefined && params[k] !== null && params[k] !== '') {
+        cleanParams[k] = params[k];
+      }
+    });
+    const query = new URLSearchParams(cleanParams).toString();
+    return fetchApi(`/sales${query ? '?' + query : ''}`);
+  },
+  getSale: (id) => fetchApi(`/sales/${id}`),
+  saveReceiptImage: (id, pngDataUrl) =>
+    fetchApi(`/sales/${id}/receipt-image`, { method: 'POST', body: JSON.stringify({ pngDataUrl }) }),
+  getReceiptImageUrl: (invoiceNo, format = 'svg') =>
+    `/api/sales/bills/${encodeURIComponent(invoiceNo)}/image?format=${format}`,
 
   // Suppliers & Purchases (Coming up in Step 3)
   getSuppliers: () => fetchApi('/suppliers'),

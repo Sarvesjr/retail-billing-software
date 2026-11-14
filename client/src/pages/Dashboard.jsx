@@ -78,11 +78,11 @@ export function Dashboard() {
             <span>F3: {t('products')}</span>
           </button>
           <button
-            onClick={() => navigate('/diagnostic')}
+            onClick={() => navigate('/bills')}
             className="btn-secondary text-xs"
           >
-            <ScanBarcode className="w-3.5 h-3.5 text-blue-700" />
-            <span>F4: {t('barcodeDiagnostic')}</span>
+            <ReceiptText className="w-3.5 h-3.5 text-blue-700" />
+            <span>F4: {t('previousBills')}</span>
           </button>
         </div>
       </div>

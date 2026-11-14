@@ -1,4 +1,5 @@
 import { getPool, withTransaction } from '../config/db.js';
+import { generateLosslessReceiptSvg, saveLosslessReceiptImage } from './receiptImageService.js';
 
 export async function createSale(saleData) {
   return await withTransaction(async (conn) => {
@@ -87,11 +88,12 @@ export async function createSale(saleData) {
     taxTotal = Number(taxTotal.toFixed(2));
 
     // 3. Insert sale record
+    const receiptImageUrl = `/api/sales/bills/${invoiceNo}/image`;
     const [saleResult] = await conn.execute(
       `INSERT INTO sales (
         invoice_no, customer_id, customer_name, customer_phone, subtotal, tax_total,
-        discount_total, grand_total, payment_mode, payment_status, notes, status
-      ) VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, ?, 'PAID', ?, 'COMPLETED')`,
+        discount_total, grand_total, payment_mode, payment_status, notes, status, receipt_image_url
+      ) VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, ?, 'PAID', ?, 'COMPLETED', ?)`,
       [
         invoiceNo,
         customer_id || null,
@@ -101,7 +103,8 @@ export async function createSale(saleData) {
         taxTotal,
         grandTotal,
         payment_mode,
-        notes
+        notes,
+        receiptImageUrl
       ]
     );
 
@@ -169,12 +172,35 @@ export async function createSale(saleData) {
       );
     }
 
+    // 7. Auto-generate & persist 100% lossless vector receipt image
+    try {
+      const [settingsRows] = await conn.query('SELECT `key`, `value` FROM app_settings');
+      const settingsMap = {};
+      settingsRows.forEach(r => { settingsMap[r.key] = r.value; });
+
+      const svgContent = generateLosslessReceiptSvg({
+        invoice_no: invoiceNo,
+        customer_name,
+        subtotal,
+        tax_total: taxTotal,
+        grand_total: grandTotal,
+        payment_mode,
+        created_at: new Date(),
+        items: processedItems
+      }, settingsMap);
+
+      await saveLosslessReceiptImage(saleId, invoiceNo, svgContent, null, conn);
+    } catch (imgErr) {
+      console.warn('[Receipt Warning] Could not auto-generate initial receipt image:', imgErr.message);
+    }
+
     return {
       saleId,
       invoiceNo,
       grandTotal,
       taxTotal,
       itemCount: processedItems.length,
+      receiptImageUrl: `/api/sales/bills/${invoiceNo}/image`,
       items: processedItems.map(p => ({
         productId: p.productId,
         name: p.productName,
@@ -185,17 +211,46 @@ export async function createSale(saleData) {
   });
 }
 
-export async function getRecentSales(limit = 10) {
+export async function getRecentSales(options = {}) {
   const pool = getPool();
-  const [rows] = await pool.query(
-    `SELECT s.*, COUNT(si.id) AS total_items
-     FROM sales s
-     LEFT JOIN sale_items si ON s.id = si.sale_id
-     GROUP BY s.id
-     ORDER BY s.id DESC
-     LIMIT ?`,
-    [Number(limit)]
-  );
+  const limit = options.limit ? parseInt(options.limit, 10) : 100;
+  const search = options.search ? `%${options.search.trim()}%` : null;
+  const paymentMode = options.payment_mode || null;
+  const startDate = options.startDate || null;
+  const endDate = options.endDate || null;
+
+  let query = `
+    SELECT 
+      s.*, 
+      COUNT(si.id) AS total_items,
+      COALESCE(s.receipt_image_url, CONCAT('/api/sales/bills/', s.invoice_no, '/image')) AS receipt_image_url
+    FROM sales s
+    LEFT JOIN sale_items si ON s.id = si.sale_id
+    WHERE 1=1
+  `;
+  const params = [];
+
+  if (search) {
+    query += ` AND (s.invoice_no LIKE ? OR s.customer_name LIKE ? OR s.customer_phone LIKE ?)`;
+    params.push(search, search, search);
+  }
+  if (paymentMode && paymentMode !== 'ALL') {
+    query += ` AND s.payment_mode = ?`;
+    params.push(paymentMode);
+  }
+  if (startDate) {
+    query += ` AND DATE(s.created_at) >= ?`;
+    params.push(startDate);
+  }
+  if (endDate) {
+    query += ` AND DATE(s.created_at) <= ?`;
+    params.push(endDate);
+  }
+
+  query += ` GROUP BY s.id ORDER BY s.id DESC LIMIT ?`;
+  params.push(limit);
+
+  const [rows] = await pool.query(query, params);
   return rows;
 }
 
@@ -213,6 +268,10 @@ export async function getSaleById(id) {
     [sales[0].id]
   );
 
-  return { ...sales[0], items };
+  return {
+    ...sales[0],
+    receipt_image_url: sales[0].receipt_image_url || `/api/sales/bills/${sales[0].invoice_no}/image`,
+    items
+  };
 }
 

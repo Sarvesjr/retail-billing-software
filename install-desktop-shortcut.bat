@@ -13,3 +13,4 @@ echo.
 echo Setup completed! You can now double-click "Retail Billing Software" on your Desktop.
 echo.
 pause
+

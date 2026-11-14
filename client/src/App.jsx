@@ -6,6 +6,7 @@ import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { Products } from './pages/Products';
+import { PreviousBills } from './pages/PreviousBills';
 import { BarcodeDiagnostic } from './pages/BarcodeDiagnostic';
 import { Billing } from './pages/Billing';
 import { Categories } from './pages/Categories';
@@ -35,7 +36,7 @@ function KeyboardShortcuts() {
         navigate('/products');
       } else if (e.key === 'F4') {
         e.preventDefault();
-        navigate('/diagnostic');
+        navigate('/bills');
       }
     };
 
@@ -61,7 +62,8 @@ export default function App() {
                   <Route path="/" element={<Dashboard />} />
                   <Route path="/billing" element={<Billing />} />
                   <Route path="/products" element={<Products />} />
-                  <Route path="/diagnostic" element={<BarcodeDiagnostic />} />
+                  <Route path="/bills" element={<PreviousBills />} />
+                  <Route path="/diagnostic" element={<PreviousBills />} />
                   <Route path="/categories" element={<Categories />} />
                   <Route path="/barcodes" element={<BarcodeManagement />} />
                   <Route path="/purchases" element={<Purchases />} />

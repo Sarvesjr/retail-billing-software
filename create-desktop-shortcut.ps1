@@ -20,3 +20,4 @@ foreach ($desktop in $desktopPaths) {
         Write-Host "Created Desktop Shortcut at: $shortcutPath"
     }
 }
+
