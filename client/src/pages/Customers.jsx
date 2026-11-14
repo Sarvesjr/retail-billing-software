@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useI18n } from '../i18n';
-import { UserCheck, Plus, Search, Phone, IndianRupee, History, CheckCircle2, AlertCircle, RefreshCw, X } from 'lucide-react';
+import { UserCheck, Plus, Search, Phone, IndianRupee, History, CheckCircle2, AlertCircle, RefreshCw, X, Edit, Trash2 } from 'lucide-react';
 
 export function Customers() {
   const { t, lang } = useI18n();
@@ -9,8 +9,10 @@ export function Customers() {
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
 
-  // Add Customer Modal
+  // Add / Edit Customer Modal
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingCustId, setEditingCustId] = useState(null);
   const [custForm, setCustForm] = useState({
     name: '',
     tamil_name: '',
@@ -54,6 +56,8 @@ export function Customers() {
   }, [search]);
 
   const handleOpenAdd = () => {
+    setIsEditMode(false);
+    setEditingCustId(null);
     setCustForm({
       name: '',
       tamil_name: '',
@@ -66,15 +70,54 @@ export function Customers() {
     setIsAddModalOpen(true);
   };
 
+  const handleOpenEdit = (cust) => {
+    setIsEditMode(true);
+    setEditingCustId(cust.id);
+    setCustForm({
+      name: cust.name,
+      tamil_name: cust.tamil_name || '',
+      phone: cust.phone || '',
+      email: cust.email || '',
+      address: cust.address || '',
+      credit_limit: cust.credit_limit !== undefined ? Number(cust.credit_limit) : 5000
+    });
+    setErrorMsg('');
+    setIsAddModalOpen(true);
+  };
+
+  const handleDeleteCustomer = async (cust) => {
+    if (Number(cust.current_balance) > 0) {
+      alert(`Cannot delete "${cust.name}" because they have an active Udhar balance of ₹${Number(cust.current_balance).toFixed(2)}. Please collect the balance first.`);
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete customer "${cust.name}"?`)) {
+      return;
+    }
+    try {
+      await api.deleteCustomer(cust.id);
+      setSuccessMsg(`Customer "${cust.name}" deleted successfully.`);
+      loadCustomers();
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to delete customer');
+    }
+  };
+
   const handleSaveCustomer = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      await api.createCustomer(custForm);
-      setSuccessMsg(`Customer "${custForm.name}" registered in MySQL.`);
+      if (isEditMode && editingCustId) {
+        await api.updateCustomer(editingCustId, custForm);
+        setSuccessMsg(`Customer "${custForm.name}" updated successfully.`);
+      } else {
+        await api.createCustomer(custForm);
+        setSuccessMsg(`Customer "${custForm.name}" registered in MySQL.`);
+      }
       setIsAddModalOpen(false);
+      setIsEditMode(false);
+      setEditingCustId(null);
       loadCustomers();
     } catch (err) {
       setErrorMsg(err.message);
@@ -215,7 +258,7 @@ export function Customers() {
                 <th className="text-center">Total Bills</th>
                 <th className="text-right">Total Purchases (₹)</th>
                 <th className="text-right">Outstanding Udhar (₹)</th>
-                <th className="w-44 text-center">Khata Actions</th>
+                <th className="w-56 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
@@ -252,11 +295,11 @@ export function Customers() {
                         </span>
                       </td>
                       <td className="text-center">
-                        <div className="flex items-center justify-center gap-1.5">
+                        <div className="flex items-center justify-center gap-1">
                           <button
                             type="button"
                             onClick={() => handleOpenPayment(c)}
-                            className="bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1"
+                            className="bg-emerald-50 text-emerald-800 border border-emerald-300 hover:bg-emerald-100 px-1.5 py-0.5 rounded text-[11px] font-bold flex items-center gap-0.5"
                             title="Collect Udhar Payment"
                           >
                             <IndianRupee className="w-3 h-3" />
@@ -265,11 +308,28 @@ export function Customers() {
                           <button
                             type="button"
                             onClick={() => handleOpenLedger(c)}
-                            className="bg-blue-50 text-blue-800 border border-blue-300 hover:bg-blue-100 px-2 py-1 rounded text-[11px] font-bold flex items-center gap-1"
+                            className="bg-blue-50 text-blue-800 border border-blue-300 hover:bg-blue-100 px-1.5 py-0.5 rounded text-[11px] font-bold flex items-center gap-0.5"
                             title="View Khata Statement"
                           >
                             <History className="w-3 h-3" />
                             <span>Khata</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEdit(c)}
+                            className="bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 px-1.5 py-0.5 rounded text-[11px] font-bold flex items-center gap-0.5"
+                            title="Edit Customer Details"
+                          >
+                            <Edit className="w-3 h-3" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteCustomer(c)}
+                            className="bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100 px-1.5 py-0.5 rounded text-[11px] font-bold flex items-center gap-0.5"
+                            title="Delete Customer"
+                          >
+                            <Trash2 className="w-3 h-3" />
                           </button>
                         </div>
                       </td>
@@ -282,12 +342,14 @@ export function Customers() {
         </div>
       </div>
 
-      {/* Add Customer Modal */}
+      {/* Add / Edit Customer Modal */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-md border border-gray-300 overflow-hidden animate-fade-in">
             <div className="bg-blue-900 text-white px-4 py-2.5 flex items-center justify-between">
-              <h3 className="font-bold text-xs uppercase tracking-wide">Register New Customer</h3>
+              <h3 className="font-bold text-xs uppercase tracking-wide">
+                {isEditMode ? `Edit Customer: ${custForm.name}` : 'Register New Customer'}
+              </h3>
               <button onClick={() => setIsAddModalOpen(false)} className="text-blue-200 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
@@ -363,7 +425,7 @@ export function Customers() {
                   disabled={submitting}
                   className="btn-primary text-xs py-1.5 px-4 font-bold disabled:opacity-50"
                 >
-                  {submitting ? 'Saving...' : 'Save Customer'}
+                  {submitting ? 'Saving...' : isEditMode ? 'Update Customer' : 'Save Customer'}
                 </button>
               </div>
             </form>

@@ -104,3 +104,59 @@ export async function getCustomerLedger(customerId) {
   return sales;
 }
 
+export async function updateCustomer(id, data) {
+  const pool = getPool();
+  const { name, tamil_name, phone, email, gstin, address, credit_limit } = data;
+
+  if (!name || !name.trim()) throw new Error('Customer name is required');
+  if (!phone || !phone.trim()) throw new Error('Customer phone number is required');
+
+  // Check if phone is already used by another active customer
+  const [existingPhone] = await pool.query(
+    'SELECT id FROM customers WHERE phone = ? AND id != ? AND is_active = TRUE',
+    [phone.trim(), id]
+  );
+  if (existingPhone.length > 0) {
+    throw new Error(`Phone number "${phone}" is already used by another registered customer.`);
+  }
+
+  await pool.query(
+    `UPDATE customers SET
+      name = ?,
+      tamil_name = ?,
+      phone = ?,
+      email = ?,
+      gstin = ?,
+      address = ?,
+      credit_limit = ?
+     WHERE id = ?`,
+    [
+      name.trim(),
+      tamil_name?.trim() || null,
+      phone.trim(),
+      email?.trim() || null,
+      gstin?.trim() || null,
+      address?.trim() || null,
+      credit_limit !== undefined ? Number(credit_limit) : 5000,
+      id
+    ]
+  );
+
+  return { id, ...data };
+}
+
+export async function deleteCustomer(id) {
+  const pool = getPool();
+  const [custRows] = await pool.query('SELECT current_balance, name FROM customers WHERE id = ?', [id]);
+  if (!custRows.length) throw new Error('Customer not found');
+
+  if (Number(custRows[0].current_balance) > 0) {
+    throw new Error(
+      `Cannot delete customer "${custRows[0].name}" because they have an outstanding Udhar balance of ₹${Number(custRows[0].current_balance).toFixed(2)}. Please collect the balance first.`
+    );
+  }
+
+  await pool.query('UPDATE customers SET is_active = FALSE WHERE id = ?', [id]);
+  return { success: true, message: `Customer "${custRows[0].name}" deleted successfully.` };
+}
+

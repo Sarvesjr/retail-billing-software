@@ -26,3 +26,12 @@ export async function updateSupplier(req, res, next) {
     next(error);
   }
 }
+
+export async function deleteSupplier(req, res, next) {
+  try {
+    const result = await supplierService.deleteSupplier(req.params.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}

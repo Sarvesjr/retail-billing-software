@@ -49,6 +49,23 @@ export function Products() {
   const nameInputRef = useRef(null);
   const barcodeCheckTimeout = useRef(null);
 
+  // Clean product form data factory
+  const getCleanProductFormData = (defaultUnitId = '1', defaultCategoryId = '') => ({
+    sku: 'PRD-' + Math.floor(1000 + Math.random() * 9000),
+    name: '',
+    tamil_name: '',
+    category_id: defaultCategoryId,
+    unit_id: defaultUnitId,
+    hsn_code: '',
+    gst_rate: 0,
+    purchase_price: '',
+    selling_price: '',
+    mrp: '',
+    min_stock_level: 5,
+    barcode: '',
+    opening_stock: '10'
+  });
+
   // Form state
   const [formData, setFormData] = useState({
     sku: '',
@@ -102,10 +119,11 @@ export function Products() {
       try {
         const lookup = await api.lookupBarcode(scannedCode, scanData.inputSource || 'SCANNER');
         if (lookup.found && lookup.product) {
-          // Pre-existing product found!
+          // Pre-existing product found! Load directly in Edit Mode for this product
           setExistingProductFound(lookup.product);
-          setIsEditMode(false);
-          setEditingProductId(null);
+          setIsEditMode(true);
+          setEditingProductId(lookup.product.id);
+          setErrorMsg('');
           setFormData({
             sku: lookup.product.sku,
             name: lookup.product.name,
@@ -122,25 +140,37 @@ export function Products() {
             opening_stock: lookup.product.current_stock !== undefined ? String(lookup.product.current_stock) : '0'
           });
           setIsModalOpen(true);
-          setScannerNotice(`Pre-existing product detected: ${lookup.product.name}`);
+          setScannerNotice(`Pre-existing product loaded: #${lookup.product.id} ${lookup.product.name}`);
           return;
         }
       } catch (lookupErr) {
         console.warn('Barcode lookup pre-check error:', lookupErr);
       }
 
-      // New product (unregistered barcode)
+      // New product (unregistered barcode) -> ALWAYS reset all form fields to completely blank fresh defaults!
+      const autoSku = 'PRD-' + Math.floor(1000 + Math.random() * 9000);
       setExistingProductFound(null);
       setIsEditMode(false);
       setEditingProductId(null);
-      setFormData((prev) => ({
-        ...prev,
+      setErrorMsg('');
+      setFormData({
+        sku: autoSku,
+        name: '',
+        tamil_name: '',
+        category_id: categories.length ? String(categories[0].id) : '',
+        unit_id: units.length ? String(units[0].id) : '1',
+        hsn_code: '',
+        gst_rate: 0,
+        purchase_price: '',
+        selling_price: '',
+        mrp: '',
+        min_stock_level: 5,
         barcode: scannedCode,
-        sku: prev.sku && prev.sku.startsWith('PRD-') ? prev.sku : `PRD-${scannedCode.slice(-4)}`
-      }));
+        opening_stock: '10'
+      });
 
       setIsModalOpen(true);
-      setScannerNotice(`Captured new barcode ${scannedCode} from ${scanData.inputSource || 'Scanner'}!`);
+      setScannerNotice(`Scanned new barcode: ${scannedCode}`);
 
       setTimeout(() => {
         if (nameInputRef.current) nameInputRef.current.focus();
@@ -173,7 +203,7 @@ export function Products() {
     });
     setErrorMsg('');
     setSuccessMsg('');
-    setScannerNotice(recentScannedCode ? `Using recently scanned barcode: ${recentScannedCode}` : '');
+    setScannerNotice(recentScannedCode ? `Using barcode: ${recentScannedCode}` : '');
     setIsModalOpen(true);
   };
 
@@ -229,15 +259,24 @@ export function Products() {
     setExistingProductFound(null);
     setIsEditMode(false);
     setEditingProductId(null);
+    setErrorMsg('');
     const autoSku = 'PRD-' + Math.floor(1000 + Math.random() * 9000);
-    setFormData((prev) => ({
-      ...prev,
+    setFormData({
       sku: autoSku,
-      barcode: '',
       name: '',
-      tamil_name: ''
-    }));
-    setScannerNotice('Enter or scan a new barcode for a distinct product.');
+      tamil_name: '',
+      category_id: categories.length ? String(categories[0].id) : '',
+      unit_id: units.length ? String(units[0].id) : '1',
+      hsn_code: '',
+      gst_rate: 0,
+      purchase_price: '',
+      selling_price: '',
+      mrp: '',
+      min_stock_level: 5,
+      barcode: '',
+      opening_stock: '10'
+    });
+    setScannerNotice('Ready to add a brand new product.');
   };
 
   // Quick Create Category inline without leaving product form
@@ -315,9 +354,9 @@ export function Products() {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    if (existingProductFound && !isEditMode) {
+    if (existingProductFound && (!isEditMode || Number(existingProductFound.id) !== Number(editingProductId))) {
       setErrorMsg(
-        `Cannot create duplicate: Barcode is already assigned to "${existingProductFound.name}". Please click "Edit This Existing Product" above to update it.`
+        `Cannot save duplicate: Barcode "${formData.barcode}" is already assigned to "${existingProductFound.name}". Please edit that product or use a different barcode.`
       );
       return;
     }
@@ -357,6 +396,7 @@ export function Products() {
       setExistingProductFound(null);
       setIsEditMode(false);
       setEditingProductId(null);
+      setFormData(getCleanProductFormData(units.length ? String(units[0].id) : '1', categories.length ? String(categories[0].id) : ''));
       loadData();
     } catch (err) {
       setErrorMsg(err.message || 'Error saving product');
@@ -528,10 +568,18 @@ export function Products() {
             <div className="bg-blue-900 text-white px-4 py-2.5 flex items-center justify-between border-b border-blue-950 font-bold text-sm">
               <span className="flex items-center gap-2">
                 {isEditMode ? (
-                  <>
+                  <div className="flex items-center gap-2">
                     <Edit className="w-4 h-4 text-amber-300" />
                     <span>{t('editProduct')}: #{editingProductId} ({formData.name || formData.sku})</span>
-                  </>
+                    <button
+                      type="button"
+                      onClick={handleClearBarcodeForNew}
+                      className="text-[11px] bg-blue-800 hover:bg-blue-700 text-yellow-300 border border-blue-700 font-bold px-2 py-0.5 rounded ml-2"
+                      title="Clear this product and start adding a new product"
+                    >
+                      + Add New Instead
+                    </button>
+                  </div>
                 ) : (
                   <>
                     <Plus className="w-4 h-4 text-yellow-300" />

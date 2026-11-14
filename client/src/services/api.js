@@ -77,6 +77,8 @@ export const api = {
   // Suppliers & Purchases
   getSuppliers: () => fetchApi('/suppliers'),
   createSupplier: (data) => fetchApi('/suppliers', { method: 'POST', body: JSON.stringify(data) }),
+  updateSupplier: (id, data) => fetchApi(`/suppliers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteSupplier: (id) => fetchApi(`/suppliers/${id}`, { method: 'DELETE' }),
   getPurchases: () => fetchApi('/purchases'),
   createPurchase: (data) => fetchApi('/purchases', { method: 'POST', body: JSON.stringify(data) }),
 
@@ -86,6 +88,8 @@ export const api = {
     return fetchApi(`/customers${query ? '?' + query : ''}`);
   },
   createCustomer: (data) => fetchApi('/customers', { method: 'POST', body: JSON.stringify(data) }),
+  updateCustomer: (id, data) => fetchApi(`/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCustomer: (id) => fetchApi(`/customers/${id}`, { method: 'DELETE' }),
   createCustomerPayment: (data) => fetchApi('/customers/payments', { method: 'POST', body: JSON.stringify(data) }),
 
   // Expenses

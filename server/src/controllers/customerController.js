@@ -37,3 +37,21 @@ export async function getLedger(req, res, next) {
   }
 }
 
+export async function updateCustomer(req, res, next) {
+  try {
+    const updated = await customerService.updateCustomer(req.params.id, req.body);
+    res.json({ success: true, data: updated, message: 'Customer updated successfully' });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function deleteCustomer(req, res, next) {
+  try {
+    const result = await customerService.deleteCustomer(req.params.id);
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+}
+

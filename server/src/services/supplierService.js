@@ -63,3 +63,18 @@ export async function updateSupplier(id, data) {
 
   return { id, ...data };
 }
+
+export async function deleteSupplier(id) {
+  const pool = getPool();
+  const [suppRows] = await pool.query('SELECT current_balance, name FROM suppliers WHERE id = ?', [id]);
+  if (!suppRows.length) throw new Error('Supplier not found');
+
+  if (Number(suppRows[0].current_balance) > 0) {
+    throw new Error(
+      `Cannot delete supplier "${suppRows[0].name}" because there is an outstanding payable balance of ₹${Number(suppRows[0].current_balance).toFixed(2)}. Please settle the balance first.`
+    );
+  }
+
+  await pool.query('UPDATE suppliers SET is_active = FALSE WHERE id = ?', [id]);
+  return { success: true, message: `Supplier "${suppRows[0].name}" deleted successfully.` };
+}

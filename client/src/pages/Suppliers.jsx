@@ -1,13 +1,15 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useI18n } from '../i18n';
-import { Users2, Plus, Phone, Mail, MapPin, CheckCircle2, AlertCircle, RefreshCw, X, Edit } from 'lucide-react';
+import { Users2, Plus, Phone, Mail, MapPin, CheckCircle2, AlertCircle, RefreshCw, X, Edit, Trash2 } from 'lucide-react';
 
 export function Suppliers() {
   const { t, lang } = useI18n();
   const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isEditMode, setIsEditMode] = useState(false);
+  const [editingSuppId, setEditingSuppId] = useState(null);
   const [formData, setFormData] = useState({
     name: '',
     tamil_name: '',
@@ -40,6 +42,8 @@ export function Suppliers() {
   }, []);
 
   const handleOpenAdd = () => {
+    setIsEditMode(false);
+    setEditingSuppId(null);
     setFormData({
       name: '',
       tamil_name: '',
@@ -54,15 +58,56 @@ export function Suppliers() {
     setIsModalOpen(true);
   };
 
+  const handleOpenEdit = (supp) => {
+    setIsEditMode(true);
+    setEditingSuppId(supp.id);
+    setFormData({
+      name: supp.name,
+      tamil_name: supp.tamil_name || '',
+      phone: supp.phone || '',
+      email: supp.email || '',
+      gstin: supp.gstin || '',
+      address: supp.address || '',
+      city: supp.city || '',
+      opening_balance: supp.opening_balance !== undefined ? Number(supp.opening_balance) : 0
+    });
+    setErrorMsg('');
+    setIsModalOpen(true);
+  };
+
+  const handleDeleteSupplier = async (supp) => {
+    if (Number(supp.current_balance) > 0) {
+      alert(`Cannot delete "${supp.name}" because there is an outstanding payable balance of ₹${Number(supp.current_balance).toFixed(2)}. Please settle the balance first.`);
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to delete supplier "${supp.name}"?`)) {
+      return;
+    }
+    try {
+      await api.deleteSupplier(supp.id);
+      setSuccessMsg(`Supplier "${supp.name}" deleted successfully.`);
+      loadSuppliers();
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to delete supplier');
+    }
+  };
+
   const handleSave = async (e) => {
     e.preventDefault();
     setSubmitting(true);
     setErrorMsg('');
     setSuccessMsg('');
     try {
-      await api.createSupplier(formData);
-      setSuccessMsg(`Supplier "${formData.name}" added to MySQL.`);
+      if (isEditMode && editingSuppId) {
+        await api.updateSupplier(editingSuppId, formData);
+        setSuccessMsg(`Supplier "${formData.name}" updated successfully.`);
+      } else {
+        await api.createSupplier(formData);
+        setSuccessMsg(`Supplier "${formData.name}" added to MySQL.`);
+      }
       setIsModalOpen(false);
+      setIsEditMode(false);
+      setEditingSuppId(null);
       loadSuppliers();
     } catch (err) {
       setErrorMsg(err.message);
@@ -142,16 +187,17 @@ export function Suppliers() {
                 <th className="text-center">Purchases</th>
                 <th className="text-right">Total Inward (₹)</th>
                 <th className="text-right">Balance Payable (₹)</th>
+                <th className="w-28 text-center">Actions</th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-12 text-gray-400">Loading suppliers from MySQL...</td>
+                  <td colSpan="10" className="text-center py-12 text-gray-400">Loading suppliers from MySQL...</td>
                 </tr>
               ) : suppliers.length === 0 ? (
                 <tr>
-                  <td colSpan="9" className="text-center py-12 text-gray-400">
+                  <td colSpan="10" className="text-center py-12 text-gray-400">
                     No suppliers added yet. Click &quot;+ Add Supplier&quot; to register your first distributor.
                   </td>
                 </tr>
@@ -175,6 +221,27 @@ export function Suppliers() {
                         ₹{Number(s.current_balance).toFixed(2)}
                       </span>
                     </td>
+                    <td className="text-center">
+                      <div className="flex items-center justify-center gap-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEdit(s)}
+                          className="bg-amber-50 text-amber-800 border border-amber-300 hover:bg-amber-100 px-2 py-0.5 rounded text-[11px] font-bold flex items-center gap-1"
+                          title="Edit Supplier"
+                        >
+                          <Edit className="w-3 h-3" />
+                          <span>Edit</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteSupplier(s)}
+                          className="bg-rose-50 text-rose-800 border border-rose-300 hover:bg-rose-100 px-1.5 py-0.5 rounded text-[11px] font-bold flex items-center gap-1"
+                          title="Delete Supplier"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                        </button>
+                      </div>
+                    </td>
                   </tr>
                 ))
               )}
@@ -183,12 +250,14 @@ export function Suppliers() {
         </div>
       </div>
 
-      {/* Add Supplier Modal */}
+      {/* Add / Edit Supplier Modal */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-lg border border-gray-300 overflow-hidden animate-fade-in">
             <div className="bg-blue-900 text-white px-4 py-2.5 flex items-center justify-between">
-              <h3 className="font-bold text-xs uppercase tracking-wide">Add Supplier / Distributor</h3>
+              <h3 className="font-bold text-xs uppercase tracking-wide">
+                {isEditMode ? `Edit Supplier: ${formData.name}` : 'Add Supplier / Distributor'}
+              </h3>
               <button onClick={() => setIsModalOpen(false)} className="text-blue-200 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
@@ -292,7 +361,7 @@ export function Suppliers() {
                   disabled={submitting}
                   className="btn-primary text-xs py-1.5 px-4 font-bold disabled:opacity-50"
                 >
-                  {submitting ? 'Saving...' : 'Save Supplier'}
+                  {submitting ? 'Saving...' : isEditMode ? 'Update Supplier' : 'Save Supplier'}
                 </button>
               </div>
             </form>
