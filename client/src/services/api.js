@@ -73,13 +73,13 @@ export const api = {
   getReceiptImageUrl: (invoiceNo, format = 'svg') =>
     `/api/sales/bills/${encodeURIComponent(invoiceNo)}/image?format=${format}`,
 
-  // Suppliers & Purchases (Coming up in Step 3)
+  // Suppliers & Purchases
   getSuppliers: () => fetchApi('/suppliers'),
   createSupplier: (data) => fetchApi('/suppliers', { method: 'POST', body: JSON.stringify(data) }),
   getPurchases: () => fetchApi('/purchases'),
   createPurchase: (data) => fetchApi('/purchases', { method: 'POST', body: JSON.stringify(data) }),
 
-  // Customers & Khata (Coming up in Step 4)
+  // Customers & Khata
   getCustomers: (params = {}) => {
     const query = new URLSearchParams(params).toString();
     return fetchApi(`/customers${query ? '?' + query : ''}`);
@@ -87,12 +87,12 @@ export const api = {
   createCustomer: (data) => fetchApi('/customers', { method: 'POST', body: JSON.stringify(data) }),
   createCustomerPayment: (data) => fetchApi('/customers/payments', { method: 'POST', body: JSON.stringify(data) }),
 
-  // Expenses (Coming up in Step 6)
+  // Expenses
   getExpenseCategories: () => fetchApi('/expenses/categories'),
   getExpenses: () => fetchApi('/expenses'),
   createExpense: (data) => fetchApi('/expenses', { method: 'POST', body: JSON.stringify(data) }),
 
-  // Reports & Settings (Coming up in Step 8)
+  // Reports & Settings
   getReportsSummary: () => fetchApi('/reports/summary'),
   getSettings: () => fetchApi('/settings'),
   updateSettings: (data) => fetchApi('/settings', { method: 'POST', body: JSON.stringify(data) })

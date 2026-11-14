@@ -16,6 +16,10 @@ Transform any smartphone camera into a wireless barcode scanner—no external ha
   - Omni-search: scan barcodes, type product names, or enter SKU codes with instant auto-suggestions.
   - Multi-mode payment: Cash, UPI (GPay/PhonePe), Credit Card, and Customer Credit (**Udhar / கடன்**).
   - Printable 80mm & 58mm thermal receipts with GST tax breakdown, change calculation, and shop branding.
+- **Previous Bills & 100% Lossless Digital Archive:**
+  - Automatically archives every completed invoice as an infinite-resolution vector SVG and high-definition PNG.
+  - Search past invoices by invoice number, customer name, phone number, payment mode, or date range.
+  - Interactive full-resolution receipt viewer with zoom controls, lossless PNG download, and instant thermal slip re-printing.
 - **Master-Detail Category Management:**
   - Two-pane layout: select any category on the left to immediately inspect all products, barcodes, prices, and stock units on the right.
 - **Barcode Management & Label Printing:**
@@ -142,7 +146,7 @@ This single command automatically starts:
 | **F1** | Navigate to Dashboard / Overview |
 | **F2** | Open Product Catalog Lookup |
 | **F3** | Navigate to Products Management |
-| **F4** | Open Barcode Diagnostics Screen |
+| **F4** | Open Previous Bills / Digital Receipts Archive |
 | **F5** | Save & Print Bill (Checkout) |
 | **Esc** | Close active modals / Clear search |
 

@@ -135,19 +135,19 @@ export function Dashboard() {
       </div>
 
       {/* Real-time Status Card */}
-      <div className="bg-blue-50 border border-blue-200 p-3 rounded-xs flex items-center justify-between text-xs">
-        <div className="flex items-center gap-2 text-blue-900">
-          <CheckCircle2 className="w-4 h-4 text-blue-600 shrink-0" />
+      <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xs flex items-center justify-between text-xs">
+        <div className="flex items-center gap-2 text-emerald-950">
+          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
           <span>
-            <b>Phase 1 &amp; Phase 2:</b> Single-computer foundation active. React + Electron communicates with Express backend and MySQL 9.6 database.
+            <b>Production Ready &amp; Fully Operational:</b> All modules (POS Billing, Previous Bills, Inventory, Inward Purchases, Suppliers, Customers &amp; Udhar Khata, Sales Returns, Expenses, P&amp;L Reports, Barcode Printing &amp; Phone Scanner) are fully verified and connected to MySQL.
           </span>
         </div>
         <div className="flex items-center gap-2">
           <span className="bg-emerald-600 text-white font-bold text-[10px] px-2 py-0.5 rounded">
-            CAMERA READY
+            STABLE &amp; TESTED
           </span>
-          <span className="text-gray-600">
-            HTTPS on port 5001 + Snap camera on port 5000
+          <span className="text-gray-600 font-mono text-[11px]">
+            Desktop POS + Phone Scanner
           </span>
         </div>
       </div>

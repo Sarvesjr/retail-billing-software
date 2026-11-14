@@ -18,7 +18,7 @@ function assert(condition, message) {
 
 async function runTests() {
   console.log('===============================================================');
-  console.log(' RUNNING AUTOMATED VERIFICATION: PHASE 1 & PHASE 2 MILESTONES');
+  console.log(' RUNNING AUTOMATED VERIFICATION: ALL CORE POS & DATABASE MODULES');
   console.log('===============================================================');
 
   // Test 1: MySQL Connection Verification

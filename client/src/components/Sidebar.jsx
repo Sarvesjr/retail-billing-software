@@ -88,7 +88,7 @@ export function Sidebar() {
       </nav>
       <div className="p-2 border-t border-gray-700 bg-gray-900 text-[11px] text-gray-400">
         <div>{t('singlePcNotice')}</div>
-        <div className="text-gray-500 font-mono text-[10px]">v1.0.0-phase1</div>
+        <div className="text-emerald-400 font-mono text-[10px]">v1.0.0 (Production Release)</div>
       </div>
     </aside>
   );
