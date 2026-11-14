@@ -45,12 +45,42 @@ export async function getProduct(req, res, next) {
   }
 }
 
+export const updateProductSchema = z.object({
+  sku: z.string().optional(),
+  name: z.string().min(1, 'Product name is required').optional(),
+  tamil_name: z.string().optional().nullable(),
+  category_id: z.number().int().positive().optional().nullable(),
+  unit_id: z.number().int().positive().optional(),
+  hsn_code: z.string().optional().nullable(),
+  gst_rate: z.number().min(0).max(100).optional(),
+  purchase_price: z.number().min(0).optional(),
+  selling_price: z.number().min(0).optional(),
+  mrp: z.number().min(0).optional(),
+  min_stock_level: z.number().min(0).optional(),
+  barcodes: z.array(z.string()).or(z.string()).optional(),
+  current_stock: z.number().optional()
+});
+
 export async function createProduct(req, res, next) {
   try {
     const result = await productService.createProduct(req.body);
     res.status(201).json({
       success: true,
       message: 'Product created successfully',
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function updateProduct(req, res, next) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const result = await productService.updateProduct(id, req.body);
+    res.json({
+      success: true,
+      message: 'Product updated successfully',
       data: result
     });
   } catch (error) {

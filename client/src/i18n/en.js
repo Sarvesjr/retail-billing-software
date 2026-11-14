@@ -65,6 +65,12 @@ export const en = {
 
   // Actions
   addNewProduct: '+ Add New Product',
+  editProduct: 'Edit Product',
+  update: 'Update Product',
+  itemAlreadyExists: 'Pre-existing Product Detected!',
+  itemAlreadyExistsDesc: 'This barcode is already assigned to a product in the MySQL database.',
+  editExistingProduct: 'Edit This Existing Product',
+  assignDifferentBarcode: 'Use Different Barcode',
   searchProduct: 'Search product, SKU or barcode...',
   save: 'Save',
   cancel: 'Cancel',

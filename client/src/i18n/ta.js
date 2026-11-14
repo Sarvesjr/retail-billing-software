@@ -65,6 +65,12 @@ export const ta = {
 
   // Actions
   addNewProduct: '+ புதிய பொருள் சேர்க்க',
+  editProduct: 'பொருளைத் திருத்து',
+  update: 'புதுப்பிக்க (Update)',
+  itemAlreadyExists: 'ஏற்கனவே உள்ள பொருள் கண்டுபிடிக்கப்பட்டது!',
+  itemAlreadyExistsDesc: 'இந்த பார்கோடு ஏற்கனவே உள்ள ஒரு பொருளுக்கு ஒதுக்கப்பட்டுள்ளது.',
+  editExistingProduct: 'இந்த பொருளைத் திருத்தவும்',
+  assignDifferentBarcode: 'வேறு பார்கோடைப் பயன்படுத்தவும்',
   searchProduct: 'பொருள் பெயர் / SKU / பார்கோடு தேட...',
   save: 'சேமிக்க',
   cancel: 'ரத்து செய்',

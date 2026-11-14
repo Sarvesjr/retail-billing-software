@@ -187,3 +187,110 @@ export async function createProduct(productData) {
   });
 }
 
+export async function updateProduct(id, productData) {
+  return await withTransaction(async (conn) => {
+    const {
+      name,
+      tamil_name,
+      category_id,
+      unit_id,
+      hsn_code,
+      gst_rate,
+      purchase_price,
+      selling_price,
+      mrp,
+      min_stock_level,
+      barcodes,
+      current_stock
+    } = productData;
+
+    // Check existing
+    const [existing] = await conn.query('SELECT * FROM products WHERE id = ? FOR UPDATE', [id]);
+    if (existing.length === 0) {
+      throw new Error(`Product #${id} not found.`);
+    }
+
+    const currentProd = existing[0];
+
+    // 1. Update product table
+    await conn.execute(
+      `UPDATE products SET
+        name = COALESCE(?, name),
+        tamil_name = ?,
+        category_id = ?,
+        unit_id = COALESCE(?, unit_id),
+        hsn_code = ?,
+        gst_rate = COALESCE(?, gst_rate),
+        purchase_price = COALESCE(?, purchase_price),
+        selling_price = COALESCE(?, selling_price),
+        mrp = COALESCE(?, mrp),
+        min_stock_level = COALESCE(?, min_stock_level)
+       WHERE id = ?`,
+      [
+        name ? name.trim() : currentProd.name,
+        tamil_name !== undefined ? (tamil_name ? tamil_name.trim() : null) : currentProd.tamil_name,
+        category_id !== undefined ? (category_id ? Number(category_id) : null) : currentProd.category_id,
+        unit_id !== undefined ? Number(unit_id) : currentProd.unit_id,
+        hsn_code !== undefined ? (hsn_code ? hsn_code.trim() : null) : currentProd.hsn_code,
+        gst_rate !== undefined ? Number(gst_rate) : currentProd.gst_rate,
+        purchase_price !== undefined ? Number(purchase_price) : currentProd.purchase_price,
+        selling_price !== undefined ? Number(selling_price) : currentProd.selling_price,
+        mrp !== undefined ? Number(mrp) : currentProd.mrp,
+        min_stock_level !== undefined ? Number(min_stock_level) : currentProd.min_stock_level,
+        id
+      ]
+    );
+
+    // 2. If barcode provided, ensure it is assigned to this product
+    if (barcodes !== undefined) {
+      const validBarcodes = (Array.isArray(barcodes) ? barcodes : [barcodes])
+        .map(b => (typeof b === 'object' ? b.barcode : b))
+        .filter(b => b && String(b).trim() !== '');
+
+      for (let i = 0; i < validBarcodes.length; i++) {
+        const barcodeStr = String(validBarcodes[i]).trim();
+        const [existingBc] = await conn.query('SELECT product_id FROM product_barcodes WHERE barcode = ?', [barcodeStr]);
+        if (existingBc.length > 0) {
+          if (existingBc[0].product_id !== id) {
+            throw new Error(`Barcode "${barcodeStr}" is already assigned to another product.`);
+          }
+        } else {
+          await conn.execute(
+            'INSERT INTO product_barcodes (product_id, barcode, is_primary) VALUES (?, ?, ?)',
+            [id, barcodeStr, i === 0]
+          );
+        }
+      }
+    }
+
+    // 3. Update stock if current_stock provided
+    if (current_stock !== undefined && current_stock !== null && current_stock !== '') {
+      const newStock = Number(current_stock);
+      const [stockRow] = await conn.query('SELECT current_stock FROM product_stock WHERE product_id = ?', [id]);
+      const oldStock = stockRow.length ? Number(stockRow[0].current_stock) : 0;
+      if (newStock !== oldStock) {
+        if (stockRow.length) {
+          await conn.execute('UPDATE product_stock SET current_stock = ? WHERE product_id = ?', [newStock, id]);
+        } else {
+          await conn.execute('INSERT INTO product_stock (product_id, current_stock) VALUES (?, ?)', [id, newStock]);
+        }
+        await conn.execute(
+          `INSERT INTO stock_movements (
+            product_id, movement_type, reference_no, quantity,
+            stock_before, stock_after, notes
+          ) VALUES (?, 'ADJUSTMENT_ADD', 'STOCK-UPDATE', ?, ?, ?, 'Stock updated via Product Edit')`,
+          [id, newStock - oldStock, oldStock, newStock]
+        );
+      }
+    }
+
+    // 4. Audit log
+    await conn.execute(
+      `INSERT INTO audit_logs (action, entity_name, entity_id, details) VALUES ('UPDATE', 'PRODUCT', ?, ?)`,
+      [id, JSON.stringify({ name: name || currentProd.name, selling_price, current_stock })]
+    );
+
+    return { id, name: name || currentProd.name, updated: true };
+  });
+}
+

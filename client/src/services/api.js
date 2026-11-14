@@ -30,6 +30,7 @@ export const api = {
   },
   getProduct: (id) => fetchApi(`/products/${id}`),
   createProduct: (data) => fetchApi('/products', { method: 'POST', body: JSON.stringify(data) }),
+  updateProduct: (id, data) => fetchApi(`/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 
   // Barcodes & Scanners
   lookupBarcode: (barcode, source = 'MANUAL') =>
