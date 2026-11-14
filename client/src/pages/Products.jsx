@@ -66,6 +66,72 @@ export function Products() {
     opening_stock: '10'
   });
 
+  // Safe mapper for products from any source (lookupBarcode, table rows, getProduct API)
+  const mapProductToFormData = (p, fallbackBarcode = '') => {
+    if (!p) return getCleanProductFormData(units.length ? String(units[0].id) : '1', categories.length ? String(categories[0].id) : '');
+
+    let barcodeVal = '';
+    if (p.barcodes) {
+      if (Array.isArray(p.barcodes)) {
+        barcodeVal = p.barcodes[0]?.barcode || p.barcodes[0] || '';
+      } else {
+        barcodeVal = String(p.barcodes).split(',')[0].trim();
+      }
+    } else if (p.barcode) {
+      barcodeVal = String(p.barcode).trim();
+    } else if (fallbackBarcode) {
+      barcodeVal = String(fallbackBarcode).trim();
+    }
+
+    let catId = '';
+    if (p.category_id !== undefined && p.category_id !== null && p.category_id !== '') {
+      catId = String(p.category_id);
+    } else if (p.categoryId !== undefined && p.categoryId !== null && p.categoryId !== '') {
+      catId = String(p.categoryId);
+    }
+
+    let unitId = '1';
+    if (p.unit_id !== undefined && p.unit_id !== null && p.unit_id !== '') {
+      unitId = String(p.unit_id);
+    } else if (p.unitId !== undefined && p.unitId !== null && p.unitId !== '') {
+      unitId = String(p.unitId);
+    } else if (units.length) {
+      unitId = String(units[0].id);
+    }
+
+    const purchasePrice = (p.purchase_price !== undefined && p.purchase_price !== null && p.purchase_price !== '')
+      ? String(p.purchase_price)
+      : ((p.purchasePrice !== undefined && p.purchasePrice !== null && p.purchasePrice !== '') ? String(p.purchasePrice) : '');
+
+    const sellingPrice = (p.selling_price !== undefined && p.selling_price !== null && p.selling_price !== '')
+      ? String(p.selling_price)
+      : ((p.sellingPrice !== undefined && p.sellingPrice !== null && p.sellingPrice !== '') ? String(p.sellingPrice) : '');
+
+    const mrp = (p.mrp !== undefined && p.mrp !== null && p.mrp !== '') ? String(p.mrp) : '';
+
+    const stock = (p.current_stock !== undefined && p.current_stock !== null && p.current_stock !== '')
+      ? String(p.current_stock)
+      : ((p.currentStock !== undefined && p.currentStock !== null && p.currentStock !== '')
+        ? String(p.currentStock)
+        : ((p.opening_stock !== undefined && p.opening_stock !== null && p.opening_stock !== '') ? String(p.opening_stock) : '0'));
+
+    return {
+      sku: p.sku || '',
+      name: p.name || p.product_name || p.productName || '',
+      tamil_name: p.tamil_name || p.tamilName || '',
+      category_id: catId,
+      unit_id: unitId,
+      hsn_code: p.hsn_code || p.hsnCode || '',
+      gst_rate: Number(p.gst_rate ?? p.gstRate ?? 0),
+      purchase_price: purchasePrice,
+      selling_price: sellingPrice,
+      mrp: mrp,
+      min_stock_level: Number(p.min_stock_level ?? p.minStockLevel ?? 5),
+      barcode: barcodeVal,
+      opening_stock: stock
+    };
+  };
+
   // Form state
   const [formData, setFormData] = useState({
     sku: '',
@@ -120,27 +186,25 @@ export function Products() {
         const lookup = await api.lookupBarcode(scannedCode, scanData.inputSource || 'SCANNER');
         if (lookup.found && lookup.product) {
           // Pre-existing product found! Load directly in Edit Mode for this product
-          setExistingProductFound(lookup.product);
+          const prodObj = lookup.product;
+          const prodId = prodObj.id || prodObj.productId;
+          setExistingProductFound(prodObj);
           setIsEditMode(true);
-          setEditingProductId(lookup.product.id);
+          setEditingProductId(prodId);
           setErrorMsg('');
-          setFormData({
-            sku: lookup.product.sku,
-            name: lookup.product.name,
-            tamil_name: lookup.product.tamil_name || '',
-            category_id: lookup.product.category_id ? String(lookup.product.category_id) : '',
-            unit_id: lookup.product.unit_id ? String(lookup.product.unit_id) : '1',
-            hsn_code: lookup.product.hsn_code || '',
-            gst_rate: Number(lookup.product.gst_rate) || 0,
-            purchase_price: lookup.product.purchase_price !== undefined ? String(lookup.product.purchase_price) : '',
-            selling_price: lookup.product.selling_price !== undefined ? String(lookup.product.selling_price) : '',
-            mrp: lookup.product.mrp !== undefined ? String(lookup.product.mrp) : '',
-            min_stock_level: Number(lookup.product.min_stock_level) || 5,
-            barcode: scannedCode,
-            opening_stock: lookup.product.current_stock !== undefined ? String(lookup.product.current_stock) : '0'
-          });
+          setFormData(mapProductToFormData(prodObj, scannedCode));
           setIsModalOpen(true);
-          setScannerNotice(`Pre-existing product loaded: #${lookup.product.id} ${lookup.product.name}`);
+          setScannerNotice(`Pre-existing product loaded: #${prodId} ${prodObj.name || prodObj.productName}`);
+
+          // Fetch full product details in background to ensure all nested properties are 100% synced
+          try {
+            const fullRes = await api.getProduct(prodId);
+            if (fullRes?.data) {
+              setFormData(mapProductToFormData(fullRes.data, scannedCode));
+            }
+          } catch (fullErr) {
+            // keep form loaded from lookup
+          }
           return;
         }
       } catch (lookupErr) {
@@ -148,26 +212,16 @@ export function Products() {
       }
 
       // New product (unregistered barcode) -> ALWAYS reset all form fields to completely blank fresh defaults!
-      const autoSku = 'PRD-' + Math.floor(1000 + Math.random() * 9000);
       setExistingProductFound(null);
       setIsEditMode(false);
       setEditingProductId(null);
       setErrorMsg('');
-      setFormData({
-        sku: autoSku,
-        name: '',
-        tamil_name: '',
-        category_id: categories.length ? String(categories[0].id) : '',
-        unit_id: units.length ? String(units[0].id) : '1',
-        hsn_code: '',
-        gst_rate: 0,
-        purchase_price: '',
-        selling_price: '',
-        mrp: '',
-        min_stock_level: 5,
-        barcode: scannedCode,
-        opening_stock: '10'
-      });
+      const blankData = getCleanProductFormData(
+        units.length ? String(units[0].id) : '1',
+        categories.length ? String(categories[0].id) : ''
+      );
+      blankData.barcode = scannedCode;
+      setFormData(blankData);
 
       setIsModalOpen(true);
       setScannerNotice(`Scanned new barcode: ${scannedCode}`);
@@ -182,77 +236,61 @@ export function Products() {
   }, [categories, units]);
 
   const handleOpenAdd = () => {
-    const autoSku = 'PRD-' + Math.floor(1000 + Math.random() * 9000);
     setExistingProductFound(null);
     setIsEditMode(false);
     setEditingProductId(null);
-    setFormData({
-      sku: autoSku,
-      name: '',
-      tamil_name: '',
-      category_id: categories.length ? String(categories[0].id) : '',
-      unit_id: units.length ? String(units[0].id) : '1',
-      hsn_code: '',
-      gst_rate: 0,
-      purchase_price: '',
-      selling_price: '',
-      mrp: '',
-      min_stock_level: 5,
-      barcode: recentScannedCode || '',
-      opening_stock: '10'
-    });
+    const blankData = getCleanProductFormData(
+      units.length ? String(units[0].id) : '1',
+      categories.length ? String(categories[0].id) : ''
+    );
+    if (recentScannedCode) {
+      blankData.barcode = recentScannedCode;
+    }
+    setFormData(blankData);
     setErrorMsg('');
     setSuccessMsg('');
     setScannerNotice(recentScannedCode ? `Using barcode: ${recentScannedCode}` : '');
     setIsModalOpen(true);
   };
 
-  const handleOpenEdit = (p) => {
+  const handleOpenEdit = async (p) => {
     setIsEditMode(true);
     setEditingProductId(p.id);
     setExistingProductFound(null);
-    setFormData({
-      sku: p.sku,
-      name: p.name,
-      tamil_name: p.tamil_name || '',
-      category_id: p.category_id ? String(p.category_id) : '',
-      unit_id: p.unit_id ? String(p.unit_id) : '1',
-      hsn_code: p.hsn_code || '',
-      gst_rate: Number(p.gst_rate) || 0,
-      purchase_price: p.purchase_price !== undefined ? String(p.purchase_price) : '',
-      selling_price: p.selling_price !== undefined ? String(p.selling_price) : '',
-      mrp: p.mrp !== undefined ? String(p.mrp) : '',
-      min_stock_level: Number(p.min_stock_level) || 5,
-      barcode: p.barcodes ? String(p.barcodes).split(',')[0].trim() : '',
-      opening_stock: p.current_stock !== undefined ? String(p.current_stock) : '0'
-    });
+    setFormData(mapProductToFormData(p));
     setErrorMsg('');
     setSuccessMsg('');
     setScannerNotice(`Editing Product #${p.id} (${p.name})`);
     setIsModalOpen(true);
+
+    // Fetch full product record from MySQL to ensure any unlisted fields/barcodes are loaded
+    try {
+      const fullRes = await api.getProduct(p.id);
+      if (fullRes?.data) {
+        setFormData(mapProductToFormData(fullRes.data));
+      }
+    } catch (err) {
+      // already populated from p
+    }
   };
 
-  const handleSwitchToEdit = (prod) => {
+  const handleSwitchToEdit = async (prod) => {
+    const prodId = prod.id || prod.productId;
     setIsEditMode(true);
-    setEditingProductId(prod.id);
-    setFormData({
-      sku: prod.sku,
-      name: prod.name,
-      tamil_name: prod.tamil_name || '',
-      category_id: prod.category_id ? String(prod.category_id) : '',
-      unit_id: prod.unit_id ? String(prod.unit_id) : '1',
-      hsn_code: prod.hsn_code || '',
-      gst_rate: Number(prod.gst_rate) || 0,
-      purchase_price: prod.purchase_price !== undefined ? String(prod.purchase_price) : '',
-      selling_price: prod.selling_price !== undefined ? String(prod.selling_price) : '',
-      mrp: prod.mrp !== undefined ? String(prod.mrp) : '',
-      min_stock_level: Number(prod.min_stock_level) || 5,
-      barcode: prod.barcodes ? String(prod.barcodes).split(',')[0].trim() : (formData.barcode || ''),
-      opening_stock: prod.current_stock !== undefined ? String(prod.current_stock) : '0'
-    });
+    setEditingProductId(prodId);
+    setFormData(mapProductToFormData(prod, formData.barcode));
     setExistingProductFound(null);
-    setScannerNotice(`Editing existing product: ${prod.name}`);
+    setScannerNotice(`Editing existing product: ${prod.name || prod.productName}`);
     setErrorMsg('');
+
+    try {
+      const fullRes = await api.getProduct(prodId);
+      if (fullRes?.data) {
+        setFormData(mapProductToFormData(fullRes.data, formData.barcode));
+      }
+    } catch (err) {
+      // already populated from prod
+    }
   };
 
   const handleClearBarcodeForNew = () => {
@@ -260,22 +298,10 @@ export function Products() {
     setIsEditMode(false);
     setEditingProductId(null);
     setErrorMsg('');
-    const autoSku = 'PRD-' + Math.floor(1000 + Math.random() * 9000);
-    setFormData({
-      sku: autoSku,
-      name: '',
-      tamil_name: '',
-      category_id: categories.length ? String(categories[0].id) : '',
-      unit_id: units.length ? String(units[0].id) : '1',
-      hsn_code: '',
-      gst_rate: 0,
-      purchase_price: '',
-      selling_price: '',
-      mrp: '',
-      min_stock_level: 5,
-      barcode: '',
-      opening_stock: '10'
-    });
+    setFormData(getCleanProductFormData(
+      units.length ? String(units[0].id) : '1',
+      categories.length ? String(categories[0].id) : ''
+    ));
     setScannerNotice('Ready to add a brand new product.');
   };
 
@@ -334,7 +360,8 @@ export function Products() {
         try {
           const res = await api.lookupBarcode(trimmed, 'MANUAL');
           if (res.found && res.product) {
-            if (!isEditMode || res.product.id !== editingProductId) {
+            const foundId = res.product.id || res.product.productId;
+            if (!isEditMode || Number(foundId) !== Number(editingProductId)) {
               setExistingProductFound(res.product);
             } else {
               setExistingProductFound(null);
@@ -635,18 +662,27 @@ export function Products() {
                     <div className="bg-white border border-amber-300 rounded p-2.5 mt-2 grid grid-cols-3 gap-2 text-xs">
                       <div className="col-span-2">
                         <span className="text-[10px] uppercase font-bold text-gray-500">Existing Item Name:</span>
-                        <div className="font-bold text-gray-900 text-sm">{existingProductFound.name}</div>
-                        {existingProductFound.tamil_name && (
-                          <div className="text-xs text-gray-600 font-medium">{existingProductFound.tamil_name}</div>
+                        <div className="font-bold text-gray-900 text-sm">
+                          {existingProductFound.name || existingProductFound.productName}
+                        </div>
+                        {(existingProductFound.tamil_name || existingProductFound.tamilName) && (
+                          <div className="text-xs text-gray-600 font-medium">
+                            {existingProductFound.tamil_name || existingProductFound.tamilName}
+                          </div>
+                        )}
+                        {(existingProductFound.category_name || existingProductFound.category) && (
+                          <div className="text-[11px] text-gray-500 font-semibold mt-0.5">
+                            Category: <span className="text-gray-800">{existingProductFound.category_name || existingProductFound.category}</span>
+                          </div>
                         )}
                       </div>
                       <div>
                         <span className="text-[10px] uppercase font-bold text-gray-500">Current Selling Price:</span>
                         <div className="font-mono font-black text-blue-900 text-sm">
-                          ₹{Number(existingProductFound.selling_price).toFixed(2)}
+                          ₹{Number(existingProductFound.selling_price ?? existingProductFound.sellingPrice ?? 0).toFixed(2)}
                         </div>
                         <div className="text-[11px] font-mono text-gray-600">
-                          Stock: <b>{Number(existingProductFound.current_stock || 0).toFixed(2)}</b>
+                          Stock: <b>{Number(existingProductFound.current_stock ?? existingProductFound.currentStock ?? 0).toFixed(2)}</b>
                         </div>
                       </div>
                     </div>
@@ -759,7 +795,7 @@ export function Products() {
                     </button>
                   </div>
                   <select
-                    value={formData.category_id}
+                    value={String(formData.category_id || '')}
                     onChange={(e) => {
                       if (e.target.value === '__NEW__') {
                         setQuickCategoryError('');
@@ -773,7 +809,7 @@ export function Products() {
                   >
                     <option value="">-- {t('category')} --</option>
                     {categories.map((c) => (
-                      <option key={c.id} value={c.id}>
+                      <option key={c.id} value={String(c.id)}>
                         {lang === 'ta' && c.tamil_name ? c.tamil_name : c.name}
                       </option>
                     ))}
@@ -785,12 +821,12 @@ export function Products() {
                 <div>
                   <label className="block text-[11px] font-bold text-gray-700 mb-1">{t('unit')} *</label>
                   <select
-                    value={formData.unit_id}
+                    value={String(formData.unit_id || '')}
                     onChange={(e) => setFormData({ ...formData, unit_id: e.target.value })}
                     className="form-input w-full text-xs"
                   >
                     {units.map((u) => (
-                      <option key={u.id} value={u.id}>
+                      <option key={u.id} value={String(u.id)}>
                         {u.code} - {lang === 'ta' && u.tamil_name ? u.tamil_name : u.name}
                       </option>
                     ))}
@@ -809,7 +845,7 @@ export function Products() {
                 <div>
                   <label className="block text-[11px] font-bold text-gray-700 mb-1">{t('gst')}</label>
                   <select
-                    value={formData.gst_rate}
+                    value={String(formData.gst_rate ?? 0)}
                     onChange={(e) => setFormData({ ...formData, gst_rate: Number(e.target.value) })}
                     className="form-input w-full text-xs font-mono"
                   >
