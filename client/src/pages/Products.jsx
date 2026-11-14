@@ -15,7 +15,9 @@ import {
   Edit,
   AlertTriangle,
   RotateCcw,
-  Sparkles
+  Sparkles,
+  FolderPlus,
+  X
 } from 'lucide-react';
 
 export function Products() {
@@ -37,6 +39,12 @@ export function Products() {
   const [existingProductFound, setExistingProductFound] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
   const [editingProductId, setEditingProductId] = useState(null);
+
+  // Quick Category Creation State (from inside Add/Edit Product modal)
+  const [showQuickCategoryModal, setShowQuickCategoryModal] = useState(false);
+  const [quickCategoryForm, setQuickCategoryForm] = useState({ name: '', tamil_name: '' });
+  const [quickCategorySubmitting, setQuickCategorySubmitting] = useState(false);
+  const [quickCategoryError, setQuickCategoryError] = useState('');
 
   const nameInputRef = useRef(null);
   const barcodeCheckTimeout = useRef(null);
@@ -230,6 +238,49 @@ export function Products() {
       tamil_name: ''
     }));
     setScannerNotice('Enter or scan a new barcode for a distinct product.');
+  };
+
+  // Quick Create Category inline without leaving product form
+  const handleQuickCreateCategory = async (e) => {
+    if (e) e.preventDefault();
+    if (!quickCategoryForm.name.trim()) {
+      setQuickCategoryError('Category name is required.');
+      return;
+    }
+    setQuickCategorySubmitting(true);
+    setQuickCategoryError('');
+    try {
+      const res = await api.createCategory({
+        name: quickCategoryForm.name.trim(),
+        tamil_name: quickCategoryForm.tamil_name.trim() || null
+      });
+      const createdId = res.data?.id;
+
+      // Reload categories list from MySQL
+      const catRes = await api.getCategories();
+      const updatedList = catRes.data || [];
+      setCategories(updatedList);
+
+      // Auto-select the newly created category in the product form
+      if (createdId) {
+        setFormData((prev) => ({ ...prev, category_id: String(createdId) }));
+      } else {
+        const found = updatedList.find(
+          (c) => c.name.toLowerCase() === quickCategoryForm.name.trim().toLowerCase()
+        );
+        if (found) {
+          setFormData((prev) => ({ ...prev, category_id: String(found.id) }));
+        }
+      }
+
+      setQuickCategoryForm({ name: '', tamil_name: '' });
+      setShowQuickCategoryModal(false);
+      setSuccessMsg(`Category "${quickCategoryForm.name.trim()}" created and selected!`);
+    } catch (err) {
+      setQuickCategoryError(err.message || 'Failed to create category');
+    } finally {
+      setQuickCategorySubmitting(false);
+    }
   };
 
   // Live barcode check when user types in the barcode input
@@ -643,10 +694,33 @@ export function Products() {
 
               <div className="grid grid-cols-4 gap-3">
                 <div>
-                  <label className="block text-[11px] font-bold text-gray-700 mb-1">{t('category')}</label>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-[11px] font-bold text-gray-700">{t('category')}</label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setQuickCategoryError('');
+                        setQuickCategoryForm({ name: '', tamil_name: '' });
+                        setShowQuickCategoryModal(true);
+                      }}
+                      className="text-[10px] font-bold text-blue-700 hover:text-blue-900 hover:underline flex items-center gap-0.5"
+                      title="Add a new category directly without leaving this form"
+                    >
+                      <Plus className="w-2.5 h-2.5" />
+                      <span>+ {lang === 'ta' ? 'புதிய பிரிவு' : 'Add Category'}</span>
+                    </button>
+                  </div>
                   <select
                     value={formData.category_id}
-                    onChange={(e) => setFormData({ ...formData, category_id: e.target.value })}
+                    onChange={(e) => {
+                      if (e.target.value === '__NEW__') {
+                        setQuickCategoryError('');
+                        setQuickCategoryForm({ name: '', tamil_name: '' });
+                        setShowQuickCategoryModal(true);
+                      } else {
+                        setFormData({ ...formData, category_id: e.target.value });
+                      }
+                    }}
                     className="form-input w-full text-xs"
                   >
                     <option value="">-- {t('category')} --</option>
@@ -655,6 +729,9 @@ export function Products() {
                         {lang === 'ta' && c.tamil_name ? c.tamil_name : c.name}
                       </option>
                     ))}
+                    <option value="__NEW__" className="text-blue-700 font-bold bg-blue-50">
+                      + {lang === 'ta' ? 'புதிய பிரிவு சேர்க்க...' : '+ Add New Category...'}
+                    </option>
                   </select>
                 </div>
                 <div>
@@ -789,6 +866,86 @@ export function Products() {
                     </span>
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* Quick Add Category Mini-Modal (Sub-modal over Product modal) */}
+      {showQuickCategoryModal && (
+        <div className="fixed inset-0 z-60 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-md shadow-2xl border border-gray-300 w-full max-w-sm overflow-hidden">
+            <div className="bg-blue-900 text-white px-4 py-2.5 flex items-center justify-between font-bold text-xs">
+              <span className="flex items-center gap-1.5">
+                <FolderPlus className="w-4 h-4 text-yellow-300" />
+                <span>{lang === 'ta' ? 'புதிய பிரிவு சேர்க்க' : 'Add New Category'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowQuickCategoryModal(false)}
+                className="text-gray-300 hover:text-white font-bold text-base leading-none"
+              >
+                &times;
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickCreateCategory} className="p-4 space-y-3">
+              {quickCategoryError && (
+                <div className="p-2 bg-red-100 border border-red-300 text-red-800 text-xs rounded">
+                  {quickCategoryError}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  Category Name (English) *
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. Groceries, Vermicelli, Dairy"
+                  value={quickCategoryForm.name}
+                  onChange={(e) => setQuickCategoryForm({ ...quickCategoryForm, name: e.target.value })}
+                  className="form-input w-full text-xs font-semibold"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                  Tamil Name (தமிழ் பெயர்)
+                </label>
+                <input
+                  type="text"
+                  placeholder="எ.கா. மளிகை பொருட்கள், சேமியா"
+                  value={quickCategoryForm.tamil_name}
+                  onChange={(e) => setQuickCategoryForm({ ...quickCategoryForm, tamil_name: e.target.value })}
+                  className="form-input w-full text-xs"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickCategoryModal(false)}
+                  className="btn-secondary text-xs"
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  type="submit"
+                  disabled={quickCategorySubmitting}
+                  className="btn-primary text-xs flex items-center gap-1"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>
+                    {quickCategorySubmitting
+                      ? t('saving')
+                      : lang === 'ta'
+                      ? 'சேமிக்க'
+                      : 'Save Category'}
+                  </span>
+                </button>
               </div>
             </form>
           </div>
