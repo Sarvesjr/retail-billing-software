@@ -63,10 +63,11 @@ export async function createSale(saleData) {
       const stockAfter = stockBefore - qty;
       const unitPrice = Number(item.sellingPrice || prod.selling_price);
       const gstRate = Number(prod.gst_rate || 0);
-      const lineTotal = Number((unitPrice * qty).toFixed(2));
-      const taxAmount = Number(((lineTotal * gstRate) / (100 + gstRate)).toFixed(2));
+      const baseLinePrice = Number((unitPrice * qty).toFixed(2));
+      const taxAmount = Number(((baseLinePrice * gstRate) / 100).toFixed(2));
+      const lineTotal = Number((baseLinePrice + taxAmount).toFixed(2));
 
-      subtotal += lineTotal;
+      subtotal += baseLinePrice;
       taxTotal += taxAmount;
 
       processedItems.push({
@@ -84,8 +85,19 @@ export async function createSale(saleData) {
       });
     }
 
-    const grandTotal = Number(subtotal.toFixed(2));
+    subtotal = Number(subtotal.toFixed(2));
     taxTotal = Number(taxTotal.toFixed(2));
+    const grandTotal = Number((subtotal + taxTotal).toFixed(2));
+
+    // Validate Cash received amount (Must be >= grandTotal)
+    if (payment_mode === 'CASH') {
+      const paid = paid_amount !== null && paid_amount !== undefined ? Number(paid_amount) : grandTotal;
+      if (paid < grandTotal) {
+        throw new Error(
+          `Insufficient money: Received cash (₹${paid.toFixed(2)}) is less than bill total (₹${grandTotal.toFixed(2)}). Short by ₹${(grandTotal - paid).toFixed(2)}.`
+        );
+      }
+    }
 
     // 3. Insert sale record
     const receiptImageUrl = `/api/sales/bills/${invoiceNo}/image`;

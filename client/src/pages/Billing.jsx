@@ -187,13 +187,19 @@ export function Billing() {
         return prevCart.map((item, idx) => {
           if (idx !== existingIndex) return item;
           const nextQty = item.qty + 1;
+          const baseAmount = nextQty * item.sellingPrice;
+          const taxAmount = (baseAmount * item.gstRate) / 100;
           return {
             ...item,
             qty: nextQty,
-            lineTotal: nextQty * item.sellingPrice
+            baseAmount,
+            taxAmount,
+            lineTotal: baseAmount + taxAmount
           };
         });
       } else {
+        const baseAmount = 1 * sellingPrice;
+        const taxAmount = (baseAmount * gstRate) / 100;
         const item = {
           id: Number(id),
           sku,
@@ -205,7 +211,9 @@ export function Billing() {
           unit,
           currentStock,
           qty: 1,
-          lineTotal: sellingPrice
+          baseAmount,
+          taxAmount,
+          lineTotal: baseAmount + taxAmount
         };
         return [...prevCart, item];
       }
@@ -296,9 +304,18 @@ export function Billing() {
   const updateQuantity = (id, newQty) => {
     const qty = Math.max(1, Number(newQty) || 1);
     setCart((prev) =>
-      prev.map((item) =>
-        item.id === id ? { ...item, qty, lineTotal: qty * item.sellingPrice } : item
-      )
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const baseAmount = qty * item.sellingPrice;
+        const taxAmount = (baseAmount * item.gstRate) / 100;
+        return {
+          ...item,
+          qty,
+          baseAmount,
+          taxAmount,
+          lineTotal: baseAmount + taxAmount
+        };
+      })
     );
   };
 
@@ -306,19 +323,31 @@ export function Billing() {
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
-  const subtotal = cart.reduce((acc, item) => acc + item.lineTotal, 0);
-  const taxTotal = cart.reduce((acc, item) => {
-    const taxPart = (item.lineTotal * item.gstRate) / (100 + item.gstRate);
-    return acc + taxPart;
-  }, 0);
+  // Base Subtotal (Sum of Price * Qty without tax)
+  const subtotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.qty), 0);
+  // GST Tax Amount ((Price * Qty * GST%) / 100)
+  const taxTotal = cart.reduce((acc, item) => acc + ((item.sellingPrice * item.qty * item.gstRate) / 100), 0);
   const totalTax = taxTotal;
-  const grandTotal = subtotal;
+  // Grand Total = Subtotal + GST Tax
+  const grandTotal = subtotal + taxTotal;
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
+
     if (paymentMode === 'CREDIT' && !selectedCustomerId) {
       setErrorMsg('Please select a registered customer for Credit (Udhar) sales!');
       return;
+    }
+
+    if (paymentMode === 'CASH') {
+      const cashReceived = Number(receivedAmount);
+      if (!receivedAmount || isNaN(cashReceived) || cashReceived < grandTotal) {
+        const shortAmt = (grandTotal - (isNaN(cashReceived) ? 0 : cashReceived)).toFixed(2);
+        setErrorMsg(
+          `Insufficient money! Received cash ₹${(isNaN(cashReceived) ? 0 : cashReceived).toFixed(2)} is less than bill total ₹${grandTotal.toFixed(2)}. (Short by ₹${shortAmt})`
+        );
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -591,7 +620,14 @@ export function Billing() {
                           className="form-input w-16 text-center font-bold font-mono py-0.5 text-xs"
                         />
                       </td>
-                      <td className="num-cell text-gray-500">{item.gstRate}%</td>
+                      <td className="num-cell text-gray-700">
+                        <div className="font-semibold">{item.gstRate}%</div>
+                        {item.gstRate > 0 && (
+                          <div className="text-[10px] text-gray-500 font-mono">
+                            +₹{((item.sellingPrice * item.qty * item.gstRate) / 100).toFixed(2)}
+                          </div>
+                        )}
+                      </td>
                       <td className="num-cell font-bold text-blue-900">₹{item.lineTotal.toFixed(2)}</td>
                       <td className="text-center">
                         <button
@@ -657,8 +693,10 @@ export function Billing() {
             <div className="text-3xl font-black font-mono mt-1 text-yellow-300">
               ₹{grandTotal.toFixed(2)}
             </div>
-            <div className="text-[11px] text-blue-300 mt-1">
-              ({t('taxPart')}: ₹{totalTax.toFixed(2)})
+            <div className="text-[11px] text-blue-200 mt-1 flex items-center justify-center gap-2 font-mono">
+              <span>Subtotal: ₹{subtotal.toFixed(2)}</span>
+              <span>+</span>
+              <span>GST Tax: ₹{totalTax.toFixed(2)}</span>
             </div>
           </div>
 
@@ -721,31 +759,103 @@ export function Billing() {
 
           {/* Cash calculation */}
           {paymentMode === 'CASH' && (
-            <div className="bg-gray-50 p-2 border border-gray-200 rounded space-y-1.5 text-xs">
+            <div className="bg-gray-50 p-2.5 border border-gray-200 rounded space-y-2 text-xs">
               <div>
-                <label className="block font-bold text-gray-700 mb-0.5">{t('receivedAmount')}</label>
+                <div className="flex items-center justify-between mb-0.5">
+                  <label className="font-bold text-gray-700">{t('receivedAmount')} *</label>
+                  <span className="text-[10px] text-gray-500 font-medium">Bill: ₹{grandTotal.toFixed(2)}</span>
+                </div>
                 <input
                   type="number"
-                  placeholder="0.00"
+                  step="0.01"
+                  required
+                  placeholder={`Min ₹${grandTotal.toFixed(2)}`}
                   value={receivedAmount}
-                  onChange={(e) => setReceivedAmount(e.target.value)}
-                  className="form-input w-full font-mono font-bold text-right text-sm"
+                  onChange={(e) => {
+                    setReceivedAmount(e.target.value);
+                    if (errorMsg && errorMsg.includes('Insufficient')) {
+                      setErrorMsg('');
+                    }
+                  }}
+                  className={`form-input w-full font-mono font-bold text-right text-sm ${
+                    receivedAmount !== '' && Number(receivedAmount) < grandTotal
+                      ? 'border-red-500 bg-red-50 text-red-900 focus:ring-red-400'
+                      : receivedAmount !== '' && Number(receivedAmount) >= grandTotal
+                      ? 'border-emerald-500 bg-emerald-50 text-emerald-950 focus:ring-emerald-400'
+                      : ''
+                  }`}
                 />
               </div>
-              {Number(receivedAmount) >= grandTotal && (
-                <div className="flex justify-between font-bold text-emerald-800 pt-1 border-t border-gray-200">
-                  <span>{t('balanceToGive')}</span>
-                  <span className="font-mono text-sm">₹{(Number(receivedAmount) - grandTotal).toFixed(2)}</span>
+
+              {/* Insufficient Cash Warning */}
+              {receivedAmount !== '' && Number(receivedAmount) < grandTotal && (
+                <div className="p-2 bg-red-100 border border-red-300 rounded text-red-800 font-bold text-[11px] flex items-center justify-between">
+                  <span>⚠️ Insufficient Money! Short:</span>
+                  <span className="font-mono text-sm text-red-900">
+                    -₹{(grandTotal - Number(receivedAmount)).toFixed(2)}
+                  </span>
                 </div>
               )}
+
+              {/* Sufficient Cash: Change to return */}
+              {receivedAmount !== '' && Number(receivedAmount) >= grandTotal && (
+                <div className="p-2 bg-emerald-100 border border-emerald-300 rounded text-emerald-950 font-bold text-[11px] flex items-center justify-between">
+                  <span>{t('balanceToGive')} (Change):</span>
+                  <span className="font-mono text-base text-emerald-900 font-black">
+                    ₹{(Number(receivedAmount) - grandTotal).toFixed(2)}
+                  </span>
+                </div>
+              )}
+
+              {/* Quick Exact / Rounded Cash Presets */}
+              <div className="flex gap-1.5 pt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setReceivedAmount(grandTotal.toFixed(2))}
+                  className="flex-1 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 text-[10px] py-1 px-1 rounded font-bold"
+                >
+                  Exact (₹{grandTotal.toFixed(2)})
+                </button>
+                {Math.ceil(grandTotal / 50) * 50 > grandTotal && (
+                  <button
+                    type="button"
+                    onClick={() => setReceivedAmount(String(Math.ceil(grandTotal / 50) * 50))}
+                    className="flex-1 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 text-[10px] py-1 px-1 rounded font-bold"
+                  >
+                    ₹{Math.ceil(grandTotal / 50) * 50}
+                  </button>
+                )}
+                {Math.ceil(grandTotal / 100) * 100 > grandTotal && (
+                  <button
+                    type="button"
+                    onClick={() => setReceivedAmount(String(Math.ceil(grandTotal / 100) * 100))}
+                    className="flex-1 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 text-[10px] py-1 px-1 rounded font-bold"
+                  >
+                    ₹{Math.ceil(grandTotal / 100) * 100}
+                  </button>
+                )}
+                {Math.ceil(grandTotal / 500) * 500 > grandTotal && (
+                  <button
+                    type="button"
+                    onClick={() => setReceivedAmount(String(Math.ceil(grandTotal / 500) * 500))}
+                    className="flex-1 bg-white hover:bg-gray-100 text-gray-700 border border-gray-300 text-[10px] py-1 px-1 rounded font-bold"
+                  >
+                    ₹{Math.ceil(grandTotal / 500) * 500}
+                  </button>
+                )}
+              </div>
             </div>
           )}
 
           {/* Checkout & Commit Button */}
           <button
-            disabled={cart.length === 0 || isSubmitting}
+            disabled={
+              cart.length === 0 ||
+              isSubmitting ||
+              (paymentMode === 'CASH' && (!receivedAmount || Number(receivedAmount) < grandTotal))
+            }
             onClick={handleCheckout}
-            className="w-full btn-success text-sm py-3 justify-center text-center font-bold shadow-md cursor-pointer disabled:opacity-50"
+            className="w-full btn-success text-sm py-3 justify-center text-center font-bold shadow-md cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <Printer className="w-4 h-4" />
             <span>{isSubmitting ? t('saving') : t('saveAndPrint')}</span>
@@ -910,8 +1020,8 @@ export function Billing() {
                   <span>₹{receiptData.subtotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between text-gray-600 text-[10px]">
-                  <span>Incl. GST Tax:</span>
-                  <span>₹{receiptData.taxTotal.toFixed(2)}</span>
+                  <span>GST Tax:</span>
+                  <span>+₹{receiptData.taxTotal.toFixed(2)}</span>
                 </div>
                 <div className="flex justify-between font-black text-sm pt-1 border-t border-gray-300">
                   <span>NET TOTAL:</span>

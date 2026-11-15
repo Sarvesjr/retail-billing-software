@@ -113,8 +113,8 @@ export function generateLosslessReceiptSvg(sale, shopSettings = {}) {
   <text x="15" y="${totalsY + 20}" class="mono" font-size="11" fill="#374151">Subtotal:</text>
   <text x="365" y="${totalsY + 20}" class="mono right" font-size="11" fill="#111827">₹${subtotal}</text>
 
-  <text x="15" y="${totalsY + 38}" class="mono" font-size="10" fill="#6b7280">Incl. GST Tax:</text>
-  <text x="365" y="${totalsY + 38}" class="mono right" font-size="10" fill="#4b5563">₹${taxTotal}</text>
+  <text x="15" y="${totalsY + 38}" class="mono" font-size="10" fill="#6b7280">GST Tax:</text>
+  <text x="365" y="${totalsY + 38}" class="mono right" font-size="10" fill="#4b5563">+₹${taxTotal}</text>
 
   <rect x="15" y="${totalsY + 50}" width="350" height="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" rx="2" />
   <text x="25" y="${totalsY + 70}" class="mono heavy" font-size="13" fill="#0f172a">NET TOTAL:</text>
