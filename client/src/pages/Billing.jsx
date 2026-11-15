@@ -62,6 +62,14 @@ export function Billing() {
   const lastProcessedScanIdRef = useRef('');
   const lastProcessedBarcodeRef = useRef('');
   const lastProcessedScanTimeRef = useRef(0);
+  const lastKeyTimeRef = useRef(0);
+  const rapidKeyCountRef = useRef(0);
+  const rapidScanTimerRef = useRef(null);
+  const cartRef = useRef(cart);
+
+  useEffect(() => {
+    cartRef.current = cart;
+  }, [cart]);
 
   useEffect(() => {
     if (searchInputRef.current) {
@@ -95,6 +103,125 @@ export function Billing() {
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [cart, isSubmitting]);
 
+  // Direct Barcode Scan Processor (Hardware USB + Phone Camera)
+  const handleDirectBarcodeScan = async (rawCode, inputSource = 'HARDWARE_USB') => {
+    const code = String(rawCode || '').trim();
+    if (!code) return;
+
+    // Immediately stop search debounce and suppress dropdown
+    if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+    if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
+    setShowDropdown(false);
+    setSuggestions([]);
+    setSelectedIndex(-1);
+    setSearchInput('');
+    if (searchInputRef.current) searchInputRef.current.value = '';
+
+    try {
+      const barcodeRes = await api.lookupBarcode(code, inputSource);
+      if (barcodeRes.found && barcodeRes.product) {
+        const prod = barcodeRes.product;
+        const stock = Number(prod.currentStock ?? prod.current_stock ?? 0);
+        const isActive = prod.is_active !== undefined ? Boolean(Number(prod.is_active)) : true;
+        const prodName = prod.name || prod.product_name || `Item (${code})`;
+        const unit = prod.unit || prod.unit_code || 'PCS';
+
+        if (!isActive) {
+          setLastScannedMessage({
+            success: false,
+            text: `"${prodName}" is INACTIVE`
+          });
+          setErrorMsg(`Cannot add "${prodName}": Product is marked INACTIVE in store inventory.`);
+          return;
+        }
+
+        if (stock <= 0) {
+          setLastScannedMessage({
+            success: false,
+            text: `"${prodName}" is OUT OF STOCK (0 in stock)!`
+          });
+          setErrorMsg(`Cannot add "${prodName}": Product is OUT OF STOCK (0 in stock)!`);
+          return;
+        }
+
+        const existingInCart = (cartRef.current || []).find((item) => Number(item.id) === Number(prod.id || prod.product_id));
+        if (existingInCart && existingInCart.qty + 1 > stock) {
+          setLastScannedMessage({
+            success: false,
+            text: `"${prodName}" reached stock limit (${stock} ${unit})!`
+          });
+          setErrorMsg(`Cannot add more of "${prodName}": Maximum available stock is ${stock} ${unit}.`);
+          return;
+        }
+
+        addProductToCart(prod);
+        setLastScannedMessage({
+          success: true,
+          text: `Added "${prodName}" via ${inputSource}`
+        });
+        setErrorMsg('');
+        return;
+      }
+
+      // Fallback check by SKU or product name in MySQL
+      const searchRes = await api.getProducts({ search: code, limit: 1 });
+      if (searchRes.data && searchRes.data.length > 0) {
+        const prod = searchRes.data[0];
+        const stock = Number(prod.current_stock ?? 0);
+        const isActive = prod.is_active !== undefined ? Boolean(Number(prod.is_active)) : true;
+        const prodName = prod.name;
+        const unit = prod.unit_code || 'PCS';
+
+        if (!isActive) {
+          setLastScannedMessage({
+            success: false,
+            text: `"${prodName}" is INACTIVE`
+          });
+          setErrorMsg(`Cannot add "${prodName}": Product is marked INACTIVE in store inventory.`);
+          return;
+        }
+
+        if (stock <= 0) {
+          setLastScannedMessage({
+            success: false,
+            text: `"${prodName}" is OUT OF STOCK (0 in stock)!`
+          });
+          setErrorMsg(`Cannot add "${prodName}": Product is OUT OF STOCK (0 in stock)!`);
+          return;
+        }
+
+        const existingInCart = (cartRef.current || []).find((item) => Number(item.id) === Number(prod.id));
+        if (existingInCart && existingInCart.qty + 1 > stock) {
+          setLastScannedMessage({
+            success: false,
+            text: `"${prodName}" reached stock limit (${stock} ${unit})!`
+          });
+          setErrorMsg(`Cannot add more of "${prodName}": Maximum available stock is ${stock} ${unit}.`);
+          return;
+        }
+
+        addProductToCart(prod);
+        setLastScannedMessage({
+          success: true,
+          text: `Added "${prodName}" via ${inputSource}`
+        });
+        setErrorMsg('');
+        return;
+      }
+
+      setLastScannedMessage({
+        success: false,
+        text: `Barcode "${code}" not found in MySQL`
+      });
+      setErrorMsg(`Barcode "${code}" not found in MySQL database.`);
+    } catch (err) {
+      console.error('Direct barcode scan error:', err);
+      setErrorMsg(`Barcode scan failed: ${err.message}`);
+    } finally {
+      if (searchInputRef.current) searchInputRef.current.focus();
+    }
+  };
+
   // Real-time Barcode listener from Mobile Phone or USB scanner
   useEffect(() => {
     const handleScanEvent = (e) => {
@@ -117,54 +244,35 @@ export function Billing() {
       lastProcessedBarcodeRef.current = scanData.barcode;
       lastProcessedScanTimeRef.current = now;
 
-      if (scanData.found && scanData.product) {
-        const prod = scanData.product;
-        const stock = Number(prod.currentStock ?? prod.current_stock ?? 0);
-        const isActive = prod.is_active !== undefined ? Boolean(Number(prod.is_active)) : true;
-
-        if (!isActive) {
-          setLastScannedMessage({
-            success: false,
-            text: `"${prod.name || prod.product_name}" is INACTIVE`
-          });
-          setErrorMsg(`Cannot add "${prod.name || prod.product_name}": Product is marked INACTIVE in store inventory.`);
-          return;
-        }
-
-        if (stock <= 0) {
-          setLastScannedMessage({
-            success: false,
-            text: `"${prod.name || prod.product_name}" is OUT OF STOCK (0 in stock)!`
-          });
-          setErrorMsg(`Cannot add "${prod.name || prod.product_name}": Product is OUT OF STOCK (0 in stock)!`);
-          return;
-        }
-
-        addProductToCart(prod);
-        setLastScannedMessage({
-          success: true,
-          text: `Added "${prod.name || prod.product_name}" via ${scanData.inputSource}`
-        });
-        setErrorMsg('');
-      } else if (!scanData.found) {
-        setLastScannedMessage({
-          success: false,
-          text: `Barcode "${scanData.barcode}" not found in MySQL`
-        });
-      }
+      handleDirectBarcodeScan(scanData.barcode, scanData.inputSource || 'PHONE_CAMERA');
     };
 
     window.addEventListener(SCAN_EVENT, handleScanEvent);
     return () => window.removeEventListener(SCAN_EVENT, handleScanEvent);
   }, []);
 
-  // Omni-search suggestions debounce
+  // Omni-search suggestions debounce (ONLY for manual product name typing, NEVER for barcodes)
   useEffect(() => {
     const query = searchInput.trim();
     if (!query) {
       setSuggestions([]);
       setShowDropdown(false);
       setSelectedIndex(-1);
+      return;
+    }
+
+    // 1. If pure numeric barcode (8 to 14 digits) is typed/scanned: NEVER show dropdown, directly add to bill!
+    if (/^\d{8,14}$/.test(query)) {
+      setShowDropdown(false);
+      setSuggestions([]);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      handleDirectBarcodeScan(query, 'HARDWARE_USB');
+      return;
+    }
+
+    // 2. If rapid scanner typing detected, do not show dropdown
+    if (rapidKeyCountRef.current >= 4) {
+      setShowDropdown(false);
       return;
     }
 
@@ -183,7 +291,7 @@ export function Billing() {
       } finally {
         setIsSearching(false);
       }
-    }, 120);
+    }, 180);
 
     return () => {
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -213,7 +321,7 @@ export function Billing() {
       return;
     }
 
-    const existingItem = cart.find((item) => Number(item.id) === id);
+    const existingItem = (cartRef.current || []).find((item) => Number(item.id) === id);
     if (existingItem && existingItem.qty + 1 > currentStock) {
       setErrorMsg(`Cannot add more of "${name}": Maximum available stock is ${currentStock} ${unit}.`);
       return;
@@ -265,7 +373,34 @@ export function Billing() {
     if (searchInputRef.current) searchInputRef.current.focus();
   };
 
-  const handleSearchKeyDown = async (e) => {
+  const handleSearchKeyDown = (e) => {
+    const now = Date.now();
+    const diff = now - lastKeyTimeRef.current;
+    lastKeyTimeRef.current = now;
+
+    if (diff < 50) {
+      rapidKeyCountRef.current += 1;
+    } else {
+      rapidKeyCountRef.current = 1;
+    }
+
+    // If typing fast (scanner speed), hide dropdown
+    if (rapidKeyCountRef.current >= 4) {
+      setShowDropdown(false);
+    }
+
+    // If scanner burst finished without Enter (70ms pause after 5+ rapid chars)
+    if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
+    if (rapidKeyCountRef.current >= 5) {
+      rapidScanTimerRef.current = setTimeout(() => {
+        const val = (searchInputRef.current?.value || searchInput).trim();
+        if (val && val.length >= 4) {
+          rapidKeyCountRef.current = 0;
+          handleDirectBarcodeScan(val, 'HARDWARE_USB');
+        }
+      }, 70);
+    }
+
     if (e.key === 'ArrowDown') {
       e.preventDefault();
       if (suggestions.length > 0) {
@@ -278,69 +413,25 @@ export function Billing() {
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const query = searchInput.trim();
+      const query = (e.target.value || searchInput).trim();
       if (!query) return;
 
-      // 1. FIRST: Exact barcode lookup in MySQL (Instant & reliable for USB hardware scanners)
-      try {
-        const barcodeRes = await api.lookupBarcode(query, 'HARDWARE_USB');
-        if (barcodeRes.found && barcodeRes.product) {
-          const prod = barcodeRes.product;
-          const stock = Number(prod.currentStock ?? prod.current_stock ?? 0);
-          const isActive = prod.is_active !== undefined ? Boolean(Number(prod.is_active)) : true;
+      if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
+      if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
+      rapidKeyCountRef.current = 0;
+      setShowDropdown(false);
+      setSuggestions([]);
+      setSearchInput('');
+      e.target.value = '';
 
-          if (!isActive) {
-            setLastScannedMessage({
-              success: false,
-              text: `"${prod.name || prod.product_name}" is INACTIVE`
-            });
-            setErrorMsg(`Cannot add "${prod.name || prod.product_name}": Product is marked INACTIVE in store inventory.`);
-            return;
-          }
-
-          if (stock <= 0) {
-            setLastScannedMessage({
-              success: false,
-              text: `"${prod.name || prod.product_name}" is OUT OF STOCK (0 in stock)!`
-            });
-            setErrorMsg(`Cannot add "${prod.name || prod.product_name}": Product is OUT OF STOCK!`);
-            return;
-          }
-
-          addProductToCart(barcodeRes.product);
-          setLastScannedMessage({
-            success: true,
-            text: `Added "${barcodeRes.product.name}" via USB Scanner`
-          });
-          setErrorMsg('');
-          return;
-        }
-      } catch (bcErr) {
-        console.warn('Barcode lookup check failed:', bcErr);
-      }
-
-      // 2. If user explicitly selected a dropdown suggestion using Arrow keys
-      if (selectedIndex >= 0 && suggestions[selectedIndex]) {
+      // 1. If user navigated suggestions with arrows and explicitly chose one
+      if (selectedIndex >= 0 && suggestions[selectedIndex] && suggestions[selectedIndex].name) {
         addProductToCart(suggestions[selectedIndex]);
         return;
       }
-      if (suggestions.length === 1) {
-        addProductToCart(suggestions[0]);
-        return;
-      }
 
-      // 3. Fallback: Search by product name / SKU in MySQL
-      try {
-        const searchRes = await api.getProducts({ search: query, limit: 1 });
-        if (searchRes.data && searchRes.data.length > 0) {
-          addProductToCart(searchRes.data[0]);
-          return;
-        }
-
-        setErrorMsg(`No product found matching "${query}" in MySQL database.`);
-      } catch (err) {
-        setErrorMsg('Search failed: ' + err.message);
-      }
+      // 2. Direct barcode lookup in MySQL
+      handleDirectBarcodeScan(query, 'HARDWARE_USB');
     } else if (e.key === 'Escape') {
       setShowDropdown(false);
     }

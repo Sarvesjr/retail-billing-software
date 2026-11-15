@@ -80,6 +80,7 @@ export async function lookupBarcode(rawBarcode, inputSource = 'MANUAL') {
       product: product ? {
         id: product.product_id,
         productId: product.product_id,
+        product_id: product.product_id,
         sku: product.sku,
         name: product.product_name,
         productName: product.product_name,
@@ -113,7 +114,9 @@ export async function lookupBarcode(rawBarcode, inputSource = 'MANUAL') {
         min_stock_level: Number(product.min_stock_level ?? 5),
         minStockLevel: Number(product.min_stock_level ?? 5),
         current_stock: Number(product.current_stock ?? 0),
-        currentStock: Number(product.current_stock ?? 0)
+        currentStock: Number(product.current_stock ?? 0),
+        is_active: product.is_active !== undefined ? Boolean(Number(product.is_active)) : true,
+        isActive: product.is_active !== undefined ? Boolean(Number(product.is_active)) : true
       } : null,
       message: isFound
         ? `Product "${product.product_name}" (${product.sku}) retrieved from MySQL in ${responseTimeMs}ms.`
