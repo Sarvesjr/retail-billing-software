@@ -28,3 +28,17 @@ export async function resetData(req, res, next) {
   }
 }
 
+export async function downloadBackup(req, res, next) {
+  try {
+    const sqlDump = await settingsService.generateSqlBackup();
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `retailbilling_backup_${dateStr}.sql`;
+
+    res.setHeader('Content-Type', 'application/sql');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(sqlDump);
+  } catch (error) {
+    next(error);
+  }
+}
+

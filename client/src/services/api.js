@@ -100,5 +100,12 @@ export const api = {
   // Reports & Settings
   getReportsSummary: () => fetchApi('/reports/summary'),
   getSettings: () => fetchApi('/settings'),
-  updateSettings: (data) => fetchApi('/settings', { method: 'POST', body: JSON.stringify(data) })
+  updateSettings: (data) => fetchApi('/settings', { method: 'POST', body: JSON.stringify(data) }),
+
+  // Users & Permissions
+  getUsers: () => fetchApi('/users'),
+  getUser: (id) => fetchApi(`/users/${id}`),
+  createUser: (data) => fetchApi('/users', { method: 'POST', body: JSON.stringify(data) }),
+  updateUser: (id, data) => fetchApi(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteUser: (id) => fetchApi(`/users/${id}`, { method: 'DELETE' })
 };

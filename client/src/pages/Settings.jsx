@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { api } from '../services/api';
 import { useI18n } from '../i18n';
-import { Settings as SettingsIcon, Store, Printer, Database, Trash2, CheckCircle2, AlertCircle, RefreshCw, X, ShieldAlert } from 'lucide-react';
+import { Settings as SettingsIcon, Store, Printer, Database, Trash2, CheckCircle2, AlertCircle, RefreshCw, X, ShieldAlert, Download } from 'lucide-react';
 
 export function Settings() {
   const { t, lang } = useI18n();
@@ -222,6 +222,40 @@ export function Settings() {
             </div>
           </div>
         </form>
+
+        {/* Database Backup & Archive Card */}
+        <div className="bg-white border border-blue-300 rounded shadow-xs overflow-hidden">
+          <div className="bg-blue-900 text-white px-4 py-2.5 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-blue-300" />
+              <h3 className="font-bold text-xs uppercase tracking-wide">
+                Database Backup &amp; Disaster Recovery (MySQL Dump)
+              </h3>
+            </div>
+            <span className="text-[10px] bg-blue-800 text-blue-200 px-2 py-0.5 rounded font-mono">
+              1-Click Backup
+            </span>
+          </div>
+          <div className="p-4 space-y-3 text-xs">
+            <p className="text-gray-700 leading-relaxed">
+              Download a complete SQL dump of your MySQL database including all products, barcodes, stock balances, customers, sales history, purchases, and settings. Store this backup file safely on a pen drive or external disk.
+            </p>
+
+            <div className="flex items-center gap-3">
+              <a
+                href="/api/settings/backup"
+                download
+                className="bg-emerald-700 hover:bg-emerald-800 text-white text-xs py-2 px-4 rounded font-bold flex items-center gap-2 shadow-xs transition"
+              >
+                <Download className="w-4 h-4" />
+                <span>Download Database Backup (.sql)</span>
+              </a>
+              <span className="text-[11px] text-gray-500 font-mono">
+                Full schema &amp; data export
+              </span>
+            </div>
+          </div>
+        </div>
 
         {/* Database Clean & Reset Tool */}
         <div className="bg-white border border-rose-300 rounded shadow-xs overflow-hidden">

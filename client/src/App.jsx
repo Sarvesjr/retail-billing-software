@@ -19,6 +19,7 @@ import { SalesReturns } from './pages/SalesReturns';
 import { Expenses } from './pages/Expenses';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
+import { Users } from './pages/Users';
 
 function KeyboardShortcuts() {
   const navigate = useNavigate();
@@ -76,7 +77,7 @@ export default function App() {
                   <Route path="/expenses" element={<Expenses />} />
                   <Route path="/reports" element={<Reports />} />
                   <Route path="/settings" element={<Settings />} />
-                  <Route path="/users" element={<Settings />} />
+                  <Route path="/users" element={<Users />} />
                 </Routes>
               </main>
             </div>
