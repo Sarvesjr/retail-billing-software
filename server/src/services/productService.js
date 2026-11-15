@@ -201,7 +201,8 @@ export async function updateProduct(id, productData) {
       mrp,
       min_stock_level,
       barcodes,
-      current_stock
+      current_stock,
+      is_active
     } = productData;
 
     // Check existing
@@ -224,7 +225,8 @@ export async function updateProduct(id, productData) {
         purchase_price = COALESCE(?, purchase_price),
         selling_price = COALESCE(?, selling_price),
         mrp = COALESCE(?, mrp),
-        min_stock_level = COALESCE(?, min_stock_level)
+        min_stock_level = COALESCE(?, min_stock_level),
+        is_active = COALESCE(?, is_active)
        WHERE id = ?`,
       [
         name ? name.trim() : currentProd.name,
@@ -237,6 +239,7 @@ export async function updateProduct(id, productData) {
         selling_price !== undefined ? Number(selling_price) : currentProd.selling_price,
         mrp !== undefined ? Number(mrp) : currentProd.mrp,
         min_stock_level !== undefined ? Number(min_stock_level) : currentProd.min_stock_level,
+        is_active !== undefined ? (is_active ? 1 : 0) : null,
         id
       ]
     );

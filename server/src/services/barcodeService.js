@@ -39,13 +39,14 @@ export async function lookupBarcode(rawBarcode, inputSource = 'MANUAL') {
       u.code AS unit_code,
       u.name AS unit_name,
       u.tamil_name AS unit_tamil_name,
+      p.is_active,
       COALESCE(ps.current_stock, 0) AS current_stock
     FROM product_barcodes pb
     JOIN products p ON pb.product_id = p.id
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN units u ON p.unit_id = u.id
     LEFT JOIN product_stock ps ON p.id = ps.product_id
-    WHERE pb.barcode = ? AND p.is_active = TRUE
+    WHERE pb.barcode = ?
     LIMIT 1
   `;
 

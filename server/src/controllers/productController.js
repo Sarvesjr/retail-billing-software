@@ -58,7 +58,8 @@ export const updateProductSchema = z.object({
   mrp: z.number().min(0).optional(),
   min_stock_level: z.number().min(0).optional(),
   barcodes: z.array(z.string()).or(z.string()).optional(),
-  current_stock: z.number().optional()
+  current_stock: z.number().optional(),
+  is_active: z.boolean().or(z.number()).optional()
 });
 
 export async function createProduct(req, res, next) {

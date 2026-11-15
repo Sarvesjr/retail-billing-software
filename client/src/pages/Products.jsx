@@ -63,7 +63,8 @@ export function Products() {
     mrp: '',
     min_stock_level: 5,
     barcode: '',
-    opening_stock: '10'
+    opening_stock: '10',
+    is_active: true
   });
 
   // Safe mapper for products from any source (lookupBarcode, table rows, getProduct API)
@@ -128,7 +129,8 @@ export function Products() {
       mrp: mrp,
       min_stock_level: Number(p.min_stock_level ?? p.minStockLevel ?? 5),
       barcode: barcodeVal,
-      opening_stock: stock
+      opening_stock: stock,
+      is_active: p.is_active !== undefined ? Boolean(Number(p.is_active)) : true
     };
   };
 
@@ -146,7 +148,8 @@ export function Products() {
     mrp: '',
     min_stock_level: 5,
     barcode: '',
-    opening_stock: '10'
+    opening_stock: '10',
+    is_active: true
   });
 
   const loadData = async () => {
@@ -407,7 +410,8 @@ export function Products() {
         min_stock_level: Number(formData.min_stock_level) || 0,
         barcodes: formData.barcode ? [formData.barcode.trim()] : [],
         opening_stock: Number(formData.opening_stock) || 0,
-        current_stock: Number(formData.opening_stock) || 0
+        current_stock: Number(formData.opening_stock) || 0,
+        is_active: formData.is_active !== undefined ? Boolean(formData.is_active) : true
       };
 
       if (isEditMode && editingProductId) {
@@ -558,13 +562,36 @@ export function Products() {
                     <td className="num-cell text-gray-600">₹{Number(p.purchase_price).toFixed(2)}</td>
                     <td className="num-cell font-bold text-gray-900">₹{Number(p.selling_price).toFixed(2)}</td>
                     <td className="num-cell text-gray-500">₹{Number(p.mrp).toFixed(2)}</td>
-                    <td className="num-cell font-bold bg-blue-50/50 text-blue-900">
+                    <td className={`num-cell font-bold ${
+                      Number(p.current_stock) <= 0
+                        ? 'bg-red-50 text-red-700 font-black'
+                        : Number(p.current_stock) <= Number(p.min_stock_level || 5)
+                        ? 'bg-amber-50 text-amber-800 font-black'
+                        : 'bg-blue-50/50 text-blue-900'
+                    }`}>
                       {Number(p.current_stock).toFixed(2)}
+                      {Number(p.current_stock) <= 0 && (
+                        <span className="block text-[9px] font-bold text-red-600 uppercase tracking-tighter">Out of Stock</span>
+                      )}
                     </td>
                     <td className="text-center">
-                      <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-800 border border-green-300">
-                        {t('active')}
-                      </span>
+                      {!p.is_active ? (
+                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-gray-100 text-gray-700 border border-gray-300">
+                          {lang === 'ta' ? 'முடக்கப்பட்டது' : 'Inactive'}
+                        </span>
+                      ) : Number(p.current_stock) <= 0 ? (
+                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-300">
+                          {lang === 'ta' ? 'இருப்பு இல்லை' : 'Out of Stock'}
+                        </span>
+                      ) : Number(p.current_stock) <= Number(p.min_stock_level || 5) ? (
+                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                          {lang === 'ta' ? 'குறைந்த இருப்பு' : 'Low Stock'}
+                        </span>
+                      ) : (
+                        <span className="inline-block px-1.5 py-0.5 rounded text-[10px] font-bold bg-green-100 text-green-800 border border-green-300">
+                          {lang === 'ta' ? 'இருப்பில் உள்ளது' : 'In Stock'}
+                        </span>
+                      )}
                     </td>
                     <td className="text-center">
                       <button
@@ -910,6 +937,28 @@ export function Products() {
                     className="form-input w-full text-right font-mono text-xs border-blue-400 bg-blue-50/50 font-bold"
                   />
                 </div>
+              </div>
+
+              <div className="flex items-center justify-between p-2.5 bg-gray-50 border border-gray-200 rounded">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={formData.is_active}
+                    onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                    className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                  />
+                  <div>
+                    <span className="font-bold text-gray-800 text-xs">Product Active</span>
+                    <span className="text-[11px] text-gray-500 block">
+                      When active, product is visible in search and available for billing.
+                    </span>
+                  </div>
+                </label>
+                {!formData.is_active && (
+                  <span className="text-[10px] font-bold text-gray-600 bg-gray-200 px-2 py-0.5 rounded">
+                    Inactive (Hidden from POS)
+                  </span>
+                )}
               </div>
 
               <div className="flex items-center justify-between pt-3 border-t border-gray-200">

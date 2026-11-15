@@ -118,10 +118,32 @@ export function Billing() {
       lastProcessedScanTimeRef.current = now;
 
       if (scanData.found && scanData.product) {
-        addProductToCart(scanData.product);
+        const prod = scanData.product;
+        const stock = Number(prod.currentStock ?? prod.current_stock ?? 0);
+        const isActive = prod.is_active !== undefined ? Boolean(Number(prod.is_active)) : true;
+
+        if (!isActive) {
+          setLastScannedMessage({
+            success: false,
+            text: `"${prod.name || prod.product_name}" is INACTIVE`
+          });
+          setErrorMsg(`Cannot add "${prod.name || prod.product_name}": Product is marked INACTIVE in store inventory.`);
+          return;
+        }
+
+        if (stock <= 0) {
+          setLastScannedMessage({
+            success: false,
+            text: `"${prod.name || prod.product_name}" is OUT OF STOCK (0 in stock)!`
+          });
+          setErrorMsg(`Cannot add "${prod.name || prod.product_name}": Product is OUT OF STOCK (0 in stock)!`);
+          return;
+        }
+
+        addProductToCart(prod);
         setLastScannedMessage({
           success: true,
-          text: `Added "${scanData.product.name}" via ${scanData.inputSource}`
+          text: `Added "${prod.name || prod.product_name}" via ${scanData.inputSource}`
         });
         setErrorMsg('');
       } else if (!scanData.found) {
@@ -170,7 +192,7 @@ export function Billing() {
 
   const addProductToCart = (p) => {
     if (!p) return;
-    const id = p.id || p.product_id;
+    const id = Number(p.id || p.product_id);
     const sku = p.sku || `PRD-${id}`;
     const name = p.name || p.product_name;
     const tamilName = p.tamilName || p.tamil_name || p.product_tamil_name || '';
@@ -179,6 +201,23 @@ export function Billing() {
     const gstRate = Number(p.gstRate ?? p.gst_rate ?? 0);
     const unit = p.unit || p.unit_code || 'PCS';
     const currentStock = Number(p.currentStock ?? p.current_stock ?? 0);
+    const isActive = p.is_active !== undefined ? Boolean(Number(p.is_active)) : true;
+
+    if (!isActive) {
+      setErrorMsg(`Cannot add "${name}": Product is marked INACTIVE in store inventory.`);
+      return;
+    }
+
+    if (currentStock <= 0) {
+      setErrorMsg(`Cannot add "${name}": Product is OUT OF STOCK (Available: 0 ${unit})!`);
+      return;
+    }
+
+    const existingItem = cart.find((item) => Number(item.id) === id);
+    if (existingItem && existingItem.qty + 1 > currentStock) {
+      setErrorMsg(`Cannot add more of "${name}": Maximum available stock is ${currentStock} ${unit}.`);
+      return;
+    }
 
     setCart((prevCart) => {
       const existingIndex = prevCart.findIndex((item) => Number(item.id) === Number(id));
@@ -186,7 +225,7 @@ export function Billing() {
         // Pure immutable update: create new item object so React never mutates in-place
         return prevCart.map((item, idx) => {
           if (idx !== existingIndex) return item;
-          const nextQty = item.qty + 1;
+          const nextQty = Math.min(item.qty + 1, currentStock);
           const baseAmount = nextQty * item.sellingPrice;
           const taxAmount = (baseAmount * item.gstRate) / 100;
           return {
@@ -246,6 +285,28 @@ export function Billing() {
       try {
         const barcodeRes = await api.lookupBarcode(query, 'HARDWARE_USB');
         if (barcodeRes.found && barcodeRes.product) {
+          const prod = barcodeRes.product;
+          const stock = Number(prod.currentStock ?? prod.current_stock ?? 0);
+          const isActive = prod.is_active !== undefined ? Boolean(Number(prod.is_active)) : true;
+
+          if (!isActive) {
+            setLastScannedMessage({
+              success: false,
+              text: `"${prod.name || prod.product_name}" is INACTIVE`
+            });
+            setErrorMsg(`Cannot add "${prod.name || prod.product_name}": Product is marked INACTIVE in store inventory.`);
+            return;
+          }
+
+          if (stock <= 0) {
+            setLastScannedMessage({
+              success: false,
+              text: `"${prod.name || prod.product_name}" is OUT OF STOCK (0 in stock)!`
+            });
+            setErrorMsg(`Cannot add "${prod.name || prod.product_name}": Product is OUT OF STOCK!`);
+            return;
+          }
+
           addProductToCart(barcodeRes.product);
           setLastScannedMessage({
             success: true,
@@ -302,10 +363,14 @@ export function Billing() {
   };
 
   const updateQuantity = (id, newQty) => {
-    const qty = Math.max(1, Number(newQty) || 1);
     setCart((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
+        let qty = Math.max(1, Number(newQty) || 1);
+        if (item.currentStock > 0 && qty > item.currentStock) {
+          qty = item.currentStock;
+          setErrorMsg(`Quantity for "${item.name}" set to maximum available stock limit (${item.currentStock} ${item.unit}).`);
+        }
         const baseAmount = qty * item.sellingPrice;
         const taxAmount = (baseAmount * item.gstRate) / 100;
         return {
@@ -507,17 +572,19 @@ export function Billing() {
                         ₹{Number(item.selling_price).toFixed(2)}
                       </div>
                       <div
-                        className={`text-[10px] font-semibold mt-0.5 ${
+                        className={`text-[10px] font-bold mt-0.5 ${
                           Number(item.current_stock) > 0
                             ? selectedIndex === idx
                               ? 'text-emerald-200'
                               : 'text-emerald-600'
                             : selectedIndex === idx
-                            ? 'text-rose-200'
-                            : 'text-rose-600'
+                            ? 'text-white bg-rose-700 px-1 py-0.5 rounded'
+                            : 'text-rose-700 bg-rose-50 px-1 py-0.5 rounded border border-rose-200'
                         }`}
                       >
-                        Stock: {item.current_stock} {item.unit_code || 'PCS'}
+                        {Number(item.current_stock) > 0
+                          ? `Stock: ${item.current_stock} ${item.unit_code || 'PCS'}`
+                          : `OUT OF STOCK (0 ${item.unit_code || 'PCS'})`}
                       </div>
                     </div>
                   </div>
@@ -615,10 +682,16 @@ export function Billing() {
                         <input
                           type="number"
                           min="1"
+                          max={item.currentStock > 0 ? item.currentStock : undefined}
                           value={item.qty}
                           onChange={(e) => updateQuantity(item.id, e.target.value)}
                           className="form-input w-16 text-center font-bold font-mono py-0.5 text-xs"
                         />
+                        {item.currentStock > 0 && (
+                          <div className="text-[9px] text-gray-500 font-mono mt-0.5">
+                            max {item.currentStock}
+                          </div>
+                        )}
                       </td>
                       <td className="num-cell text-gray-700">
                         <div className="font-semibold">{item.gstRate}%</div>
@@ -922,20 +995,36 @@ export function Billing() {
                       <td className="num-cell font-bold text-gray-900">
                         ₹{Number(item.selling_price).toFixed(2)}
                       </td>
-                      <td className="text-center font-bold">
+                      <td className={`text-center font-bold ${Number(item.current_stock) <= 0 ? 'text-red-700 bg-red-50' : ''}`}>
                         {item.current_stock} {item.unit_code || 'PCS'}
+                        {Number(item.current_stock) <= 0 && (
+                          <span className="block text-[9px] font-black text-red-600 uppercase tracking-tighter">
+                            Out of Stock
+                          </span>
+                        )}
                       </td>
                       <td className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            addProductToCart(item);
-                            setIsCatalogOpen(false);
-                          }}
-                          className="btn-primary text-[11px] py-1 px-2.5"
-                        >
-                          + Add
-                        </button>
+                        {Number(item.current_stock) <= 0 ? (
+                          <button
+                            type="button"
+                            disabled
+                            className="bg-gray-100 text-gray-400 border border-gray-300 text-[10px] font-bold py-1 px-2 rounded cursor-not-allowed opacity-60"
+                            title="Cannot add out-of-stock product"
+                          >
+                            Out of Stock
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              addProductToCart(item);
+                              setIsCatalogOpen(false);
+                            }}
+                            className="btn-primary text-[11px] py-1 px-2.5"
+                          >
+                            + Add
+                          </button>
+                        )}
                       </td>
                     </tr>
                   ))}

@@ -47,7 +47,7 @@ export async function createSale(saleData) {
 
       // Lock product & stock row for transaction safety
       const [stockRows] = await conn.query(
-        `SELECT ps.current_stock, p.name, p.tamil_name, p.selling_price, p.gst_rate
+        `SELECT ps.current_stock, p.name, p.tamil_name, p.selling_price, p.gst_rate, p.is_active
          FROM products p
          JOIN product_stock ps ON p.id = ps.product_id
          WHERE p.id = ? FOR UPDATE`,
@@ -60,6 +60,20 @@ export async function createSale(saleData) {
 
       const prod = stockRows[0];
       const stockBefore = Number(prod.current_stock);
+      const isActive = Boolean(prod.is_active);
+
+      if (!isActive) {
+        throw new Error(`Cannot sell "${prod.name}": Product is marked INACTIVE in store inventory.`);
+      }
+
+      if (stockBefore <= 0) {
+        throw new Error(`Cannot sell "${prod.name}": Product is OUT OF STOCK (Available stock: 0).`);
+      }
+
+      if (qty > stockBefore) {
+        throw new Error(`Insufficient stock for "${prod.name}": Requested ${qty}, but only ${stockBefore} available in stock.`);
+      }
+
       const stockAfter = stockBefore - qty;
       const unitPrice = Number(item.sellingPrice || prod.selling_price);
       const gstRate = Number(prod.gst_rate || 0);
