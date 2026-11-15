@@ -62,6 +62,9 @@ export function Billing() {
   const lastProcessedScanIdRef = useRef('');
   const lastProcessedBarcodeRef = useRef('');
   const lastProcessedScanTimeRef = useRef(0);
+  const lastScanBarcodeRef = useRef('');
+  const lastScanTimeRef = useRef(0);
+  const isScanningInProgressRef = useRef(false);
   const lastKeyTimeRef = useRef(0);
   const rapidKeyCountRef = useRef(0);
   const rapidScanTimerRef = useRef(null);
@@ -107,6 +110,23 @@ export function Billing() {
   const handleDirectBarcodeScan = async (rawCode, inputSource = 'HARDWARE_USB') => {
     const code = String(rawCode || '').trim();
     if (!code) return;
+
+    const now = Date.now();
+    // 1. Strict Cooldown: Ignore identical barcode scanned within 1200ms
+    if (code === lastScanBarcodeRef.current && (now - lastScanTimeRef.current) < 1200) {
+      setSearchInput('');
+      if (searchInputRef.current) searchInputRef.current.value = '';
+      return;
+    }
+
+    // 2. Strict Mutex: If a scan is currently processing, drop concurrent requests
+    if (isScanningInProgressRef.current) {
+      return;
+    }
+
+    lastScanBarcodeRef.current = code;
+    lastScanTimeRef.current = now;
+    isScanningInProgressRef.current = true;
 
     // Immediately stop search debounce and suppress dropdown
     if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
@@ -218,6 +238,7 @@ export function Billing() {
       console.error('Direct barcode scan error:', err);
       setErrorMsg(`Barcode scan failed: ${err.message}`);
     } finally {
+      isScanningInProgressRef.current = false;
       if (searchInputRef.current) searchInputRef.current.focus();
     }
   };
@@ -261,12 +282,11 @@ export function Billing() {
       return;
     }
 
-    // 1. If pure numeric barcode (8 to 14 digits) is typed/scanned: NEVER show dropdown, directly add to bill!
-    if (/^\d{8,14}$/.test(query)) {
+    // 1. If barcode/numeric is typed/scanned: NEVER show dropdown!
+    if (/^\d{5,}$/.test(query)) {
       setShowDropdown(false);
       setSuggestions([]);
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
-      handleDirectBarcodeScan(query, 'HARDWARE_USB');
       return;
     }
 
@@ -384,21 +404,9 @@ export function Billing() {
       rapidKeyCountRef.current = 1;
     }
 
-    // If typing fast (scanner speed), hide dropdown
+    // If typing fast (scanner speed), hide dropdown immediately
     if (rapidKeyCountRef.current >= 4) {
       setShowDropdown(false);
-    }
-
-    // If scanner burst finished without Enter (70ms pause after 5+ rapid chars)
-    if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
-    if (rapidKeyCountRef.current >= 5) {
-      rapidScanTimerRef.current = setTimeout(() => {
-        const val = (searchInputRef.current?.value || searchInput).trim();
-        if (val && val.length >= 4) {
-          rapidKeyCountRef.current = 0;
-          handleDirectBarcodeScan(val, 'HARDWARE_USB');
-        }
-      }, 70);
     }
 
     if (e.key === 'ArrowDown') {
@@ -413,12 +421,13 @@ export function Billing() {
       }
     } else if (e.key === 'Enter') {
       e.preventDefault();
-      const query = (e.target.value || searchInput).trim();
-      if (!query) return;
-
       if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
       if (searchDebounceRef.current) clearTimeout(searchDebounceRef.current);
       rapidKeyCountRef.current = 0;
+
+      const query = (e.target.value || searchInput).trim();
+      if (!query) return;
+
       setShowDropdown(false);
       setSuggestions([]);
       setSearchInput('');
@@ -434,6 +443,19 @@ export function Billing() {
       handleDirectBarcodeScan(query, 'HARDWARE_USB');
     } else if (e.key === 'Escape') {
       setShowDropdown(false);
+    } else {
+      // For hardware scanners that DO NOT send an Enter key suffix:
+      // Only fire after rapid scanner burst completes (120ms pause after 5+ rapid chars)
+      if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
+      if (rapidKeyCountRef.current >= 5) {
+        rapidScanTimerRef.current = setTimeout(() => {
+          const val = (searchInputRef.current?.value || searchInput).trim();
+          if (val && val.length >= 4) {
+            rapidKeyCountRef.current = 0;
+            handleDirectBarcodeScan(val, 'HARDWARE_USB');
+          }
+        }, 120);
+      }
     }
   };
 
