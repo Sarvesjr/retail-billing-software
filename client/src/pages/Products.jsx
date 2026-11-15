@@ -771,6 +771,11 @@ export function Products() {
                     placeholder="Scan product with phone or enter barcode..."
                     value={formData.barcode}
                     onChange={(e) => handleBarcodeChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                      }
+                    }}
                     className="form-input w-full font-mono text-xs font-bold border-indigo-400 bg-indigo-50/40 text-blue-900"
                   />
                 </div>

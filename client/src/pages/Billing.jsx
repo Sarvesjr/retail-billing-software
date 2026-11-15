@@ -234,6 +234,23 @@ export function Billing() {
       const query = searchInput.trim();
       if (!query) return;
 
+      // 1. FIRST: Exact barcode lookup in MySQL (Instant & reliable for USB hardware scanners)
+      try {
+        const barcodeRes = await api.lookupBarcode(query, 'HARDWARE_USB');
+        if (barcodeRes.found && barcodeRes.product) {
+          addProductToCart(barcodeRes.product);
+          setLastScannedMessage({
+            success: true,
+            text: `Added "${barcodeRes.product.name}" via USB Scanner`
+          });
+          setErrorMsg('');
+          return;
+        }
+      } catch (bcErr) {
+        console.warn('Barcode lookup check failed:', bcErr);
+      }
+
+      // 2. If user explicitly selected a dropdown suggestion using Arrow keys
       if (selectedIndex >= 0 && suggestions[selectedIndex]) {
         addProductToCart(suggestions[selectedIndex]);
         return;
@@ -243,13 +260,8 @@ export function Billing() {
         return;
       }
 
+      // 3. Fallback: Search by product name / SKU in MySQL
       try {
-        const barcodeRes = await api.lookupBarcode(query, 'MANUAL');
-        if (barcodeRes.found && barcodeRes.product) {
-          addProductToCart(barcodeRes.product);
-          return;
-        }
-
         const searchRes = await api.getProducts({ search: query, limit: 1 });
         if (searchRes.data && searchRes.data.length > 0) {
           addProductToCart(searchRes.data[0]);
