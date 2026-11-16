@@ -35,15 +35,18 @@ export function generateLosslessReceiptSvg(sale, shopSettings = {}) {
   let currentY = 195;
 
   items.forEach((it, idx) => {
-    const name = escapeXml(it.product_name || it.name || 'Item');
-    const tamil = it.tamil_name || it.tamilName ? ` (${escapeXml(it.tamil_name || it.tamilName)})` : '';
-    const qty = Number(it.quantity || it.qty || 1);
-    const unitPrice = Number(it.unit_price || it.sellingPrice || 0).toFixed(2);
-    const lineTotal = Number(it.line_total || it.lineTotal || (qty * unitPrice)).toFixed(2);
+    const rawName = it.product_name || it.productName || it.name || 'Item';
+    const name = escapeXml(rawName);
+    const rawTamil = it.tamil_name || it.tamilName || it.product_tamil_name || '';
+    const tamil = rawTamil ? escapeXml(rawTamil) : '';
+    const displayName = tamil ? `${name.slice(0, 18)} (${tamil.slice(0, 12)})` : name.slice(0, 25);
+    const qty = Number(it.quantity !== undefined ? it.quantity : (it.qty !== undefined ? it.qty : 1));
+    const unitPrice = Number(it.unit_price !== undefined ? it.unit_price : (it.unitPrice !== undefined ? it.unitPrice : (it.selling_price !== undefined ? it.selling_price : (it.sellingPrice || 0)))).toFixed(2);
+    const lineTotal = Number(it.line_total !== undefined ? it.line_total : (it.lineTotal !== undefined ? it.lineTotal : (qty * Number(unitPrice)))).toFixed(2);
 
     itemsSvg += `
       <g transform="translate(0, ${currentY})">
-        <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">${idx + 1}. ${name.slice(0, 22)}${tamil.slice(0, 14)}</text>
+        <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">${idx + 1}. ${displayName}</text>
         <text x="190" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="middle" fill="#000">${qty}</text>
         <text x="270" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="end" fill="#000">₹${unitPrice}</text>
         <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#000">₹${lineTotal}</text>

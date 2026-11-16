@@ -86,14 +86,25 @@ export async function createSale(saleData) {
 
       processedItems.push({
         productId,
+        product_id: productId,
         productName: prod.name,
+        product_name: prod.name,
+        name: prod.name,
         tamilName: prod.tamil_name,
+        tamil_name: prod.tamil_name,
         barcode: item.barcode || null,
         qty,
+        quantity: qty,
         unitPrice,
+        unit_price: unitPrice,
+        sellingPrice: unitPrice,
+        selling_price: unitPrice,
         gstRate,
+        gst_rate: gstRate,
         taxAmount,
+        tax_amount: taxAmount,
         lineTotal,
+        line_total: lineTotal,
         stockBefore,
         stockAfter
       });

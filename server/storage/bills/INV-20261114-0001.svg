@@ -41,9 +41,9 @@
   <!-- Rendered Line Items -->
   
       <g transform="translate(0, 195)">
-        <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">1. Item</text>
+        <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">1. Ulset Syrup</text>
         <text x="190" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="middle" fill="#000">2</text>
-        <text x="270" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="end" fill="#000">₹0.00</text>
+        <text x="270" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="end" fill="#000">₹170.00</text>
         <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#000">₹340.00</text>
       </g>
     
@@ -54,8 +54,8 @@
   <text x="15" y="256" class="mono" font-size="11" fill="#374151">Subtotal:</text>
   <text x="365" y="256" class="mono right" font-size="11" fill="#111827">₹340.00</text>
 
-  <text x="15" y="274" class="mono" font-size="10" fill="#6b7280">Incl. GST Tax:</text>
-  <text x="365" y="274" class="mono right" font-size="10" fill="#4b5563">₹16.19</text>
+  <text x="15" y="274" class="mono" font-size="10" fill="#6b7280">GST Tax:</text>
+  <text x="365" y="274" class="mono right" font-size="10" fill="#4b5563">+₹16.19</text>
 
   <rect x="15" y="286" width="350" height="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" rx="2" />
   <text x="25" y="306" class="mono heavy" font-size="13" fill="#0f172a">NET TOTAL:</text>

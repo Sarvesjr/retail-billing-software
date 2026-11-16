@@ -1,3 +1,4 @@
+import fs from 'fs';
 import { z } from 'zod';
 import * as saleService from '../services/saleService.js';
 import { getReceiptImageFile, generateLosslessReceiptSvg, saveLosslessReceiptImage } from '../services/receiptImageService.js';
@@ -64,21 +65,32 @@ export async function getReceiptImage(req, res, next) {
 
     let fileInfo = await getReceiptImageFile(invoiceNo, format);
 
-    // If file doesn't exist on disk yet, generate it dynamically from MySQL record!
-    if (!fileInfo) {
-      const sale = await saleService.getSaleById(invoiceNo);
-      if (!sale) {
-        return res.status(404).json({ success: false, error: 'Invoice not found' });
+    // If file exists as SVG, verify it does not contain the bugged placeholder patterns
+    let needsRegenerate = !fileInfo;
+    if (fileInfo && fileInfo.contentType === 'image/svg+xml') {
+      try {
+        const existingContent = await fs.promises.readFile(fileInfo.path, 'utf8');
+        if (/>\d+\.\s*Item<\/text>/i.test(existingContent) || />₹0\.00<\/text>/i.test(existingContent)) {
+          needsRegenerate = true;
+        }
+      } catch (readErr) {
+        needsRegenerate = true;
       }
+    }
 
-      const pool = getPool();
-      const [settingsRows] = await pool.query('SELECT `key`, `value` FROM app_settings');
-      const settingsMap = {};
-      settingsRows.forEach(r => { settingsMap[r.key] = r.value; });
+    // Dynamic regeneration if file is missing or has legacy bugged placeholder values
+    if (needsRegenerate) {
+      const sale = await saleService.getSaleById(invoiceNo);
+      if (sale) {
+        const pool = getPool();
+        const [settingsRows] = await pool.query('SELECT `key`, `value` FROM app_settings');
+        const settingsMap = {};
+        settingsRows.forEach(r => { settingsMap[r.key] = r.value; });
 
-      const svgContent = generateLosslessReceiptSvg(sale, settingsMap);
-      await saveLosslessReceiptImage(sale.id, sale.invoice_no, svgContent);
-      fileInfo = await getReceiptImageFile(invoiceNo, format);
+        const svgContent = generateLosslessReceiptSvg(sale, settingsMap);
+        await saveLosslessReceiptImage(sale.id, sale.invoice_no, svgContent);
+        fileInfo = await getReceiptImageFile(invoiceNo, format);
+      }
     }
 
     if (!fileInfo) {
@@ -91,7 +103,7 @@ export async function getReceiptImage(req, res, next) {
     }
 
     res.setHeader('Content-Type', fileInfo.contentType);
-    res.setHeader('Cache-Control', 'public, max-age=3600');
+    res.setHeader('Cache-Control', 'no-cache, must-revalidate');
     return res.sendFile(fileInfo.path);
   } catch (error) {
     next(error);
