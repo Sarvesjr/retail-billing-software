@@ -1,7 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { api } from '../services/api';
 import { useI18n } from '../i18n';
-import { RotateCcw, Plus, Search, Trash2, CheckCircle2, AlertCircle, RefreshCw, X, Receipt } from 'lucide-react';
+import { RotateCcw, Plus, Search, Trash2, CheckCircle2, AlertCircle, RefreshCw, X, Receipt, ScanBarcode } from 'lucide-react';
+import { SCAN_EVENT } from '../components/BarcodeListener';
 
 export function SalesReturns() {
   const { t, lang } = useI18n();
@@ -16,10 +17,19 @@ export function SalesReturns() {
   const [reason, setReason] = useState('Customer Return');
   const [items, setItems] = useState([]);
   const [prodSearch, setProdSearch] = useState('');
+  const [scannerNotice, setScannerNotice] = useState(null);
 
   const [errorMsg, setErrorMsg] = useState('');
   const [successMsg, setSuccessMsg] = useState('');
   const [submitting, setSubmitting] = useState(false);
+
+  const prodSearchInputRef = useRef(null);
+  const lastScanBarcodeRef = useRef('');
+  const lastScanTimeRef = useRef(0);
+  const isScanningInProgressRef = useRef(false);
+  const lastKeyTimeRef = useRef(0);
+  const rapidKeyCountRef = useRef(0);
+  const rapidScanTimerRef = useRef(null);
 
   const loadData = async () => {
     setLoading(true);
@@ -41,6 +51,161 @@ export function SalesReturns() {
     loadData();
   }, []);
 
+  const addItem = (p) => {
+    if (!p) return;
+    const prodId = Number(p.id || p.product_id || p.productId);
+    const prodName = p.name || p.product_name || p.productName;
+    const tamilName = p.tamil_name || p.tamilName || p.product_tamil_name || '';
+    const price = Number(p.selling_price || p.sellingPrice || 0);
+
+    setItems((prev) => {
+      const existing = prev.find((i) => i.product_id === prodId);
+      if (existing) {
+        return prev.map((i) => (i.product_id === prodId ? { ...i, quantity: i.quantity + 1 } : i));
+      }
+      return [
+        ...prev,
+        {
+          product_id: prodId,
+          product_name: prodName,
+          tamil_name: tamilName,
+          quantity: 1,
+          refund_price: price,
+          restocked: true
+        }
+      ];
+    });
+    setProdSearch('');
+    setTimeout(() => {
+      if (prodSearchInputRef.current) prodSearchInputRef.current.focus();
+    }, 50);
+  };
+
+  const removeItem = (id) => {
+    setItems((prev) => prev.filter((i) => i.product_id !== id));
+  };
+
+  // Direct Barcode Scan Processor (Hardware USB + Phone Camera)
+  const handleDirectBarcodeScan = async (rawCode, inputSource = 'HARDWARE_USB') => {
+    const code = String(rawCode || '').trim();
+    if (!code) return;
+
+    const now = Date.now();
+    // 1. Strict Cooldown: Ignore duplicate barcode scans within 1200ms
+    if (code === lastScanBarcodeRef.current && (now - lastScanTimeRef.current) < 1200) {
+      setProdSearch('');
+      if (prodSearchInputRef.current) prodSearchInputRef.current.value = '';
+      return;
+    }
+
+    // 2. Mutex lock
+    if (isScanningInProgressRef.current) {
+      return;
+    }
+
+    lastScanBarcodeRef.current = code;
+    lastScanTimeRef.current = now;
+    isScanningInProgressRef.current = true;
+
+    setProdSearch('');
+    if (prodSearchInputRef.current) prodSearchInputRef.current.value = '';
+    setErrorMsg('');
+
+    // Ensure return modal is opened
+    setIsModalOpen(true);
+
+    try {
+      const barcodeRes = await api.lookupBarcode(code, inputSource);
+      if (barcodeRes.found && barcodeRes.product) {
+        const prod = barcodeRes.product;
+        addItem(prod);
+        setScannerNotice({
+          success: true,
+          text: `Added "${prod.name || prod.product_name}" via ${inputSource}`
+        });
+        setErrorMsg('');
+        return;
+      }
+
+      // Fallback: search products by query in MySQL
+      const searchRes = await api.getProducts({ search: code, limit: 1 });
+      if (searchRes.data && searchRes.data.length > 0) {
+        const prod = searchRes.data[0];
+        addItem(prod);
+        setScannerNotice({
+          success: true,
+          text: `Added "${prod.name}" via ${inputSource}`
+        });
+        setErrorMsg('');
+        return;
+      }
+
+      setScannerNotice({
+        success: false,
+        text: `Barcode "${code}" not found in MySQL`
+      });
+      setErrorMsg(`Barcode "${code}" was not found in MySQL database.`);
+    } catch (err) {
+      console.error('Sales return barcode lookup error:', err);
+      setErrorMsg(`Barcode scan failed: ${err.message}`);
+    } finally {
+      isScanningInProgressRef.current = false;
+      setTimeout(() => {
+        if (prodSearchInputRef.current) prodSearchInputRef.current.focus();
+      }, 50);
+    }
+  };
+
+  // Real-time Barcode listener from Mobile Phone or USB scanner
+  useEffect(() => {
+    const handleScanEvent = (e) => {
+      const scanData = e.detail;
+      if (!scanData || !scanData.barcode) return;
+      handleDirectBarcodeScan(scanData.barcode, scanData.inputSource || 'PHONE_CAMERA');
+    };
+
+    window.addEventListener(SCAN_EVENT, handleScanEvent);
+    return () => window.removeEventListener(SCAN_EVENT, handleScanEvent);
+  }, []);
+
+  const handleSearchKeyDown = (e) => {
+    const now = Date.now();
+    const diff = now - lastKeyTimeRef.current;
+    lastKeyTimeRef.current = now;
+
+    if (diff < 50) {
+      rapidKeyCountRef.current += 1;
+    } else {
+      rapidKeyCountRef.current = 1;
+    }
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
+      rapidKeyCountRef.current = 0;
+
+      const query = (e.target.value || prodSearch).trim();
+      if (!query) return;
+
+      setProdSearch('');
+      e.target.value = '';
+
+      handleDirectBarcodeScan(query, 'HARDWARE_USB');
+    } else {
+      // For hardware USB scanners without an Enter key suffix
+      if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
+      if (rapidKeyCountRef.current >= 5) {
+        rapidScanTimerRef.current = setTimeout(() => {
+          const val = (prodSearchInputRef.current?.value || prodSearch).trim();
+          if (val && val.length >= 4) {
+            rapidKeyCountRef.current = 0;
+            handleDirectBarcodeScan(val, 'HARDWARE_USB');
+          }
+        }, 120);
+      }
+    }
+  };
+
   const handleOpenAdd = () => {
     setSaleInvoiceNo('');
     setRefundMode('CASH');
@@ -48,32 +213,11 @@ export function SalesReturns() {
     setItems([]);
     setProdSearch('');
     setErrorMsg('');
+    setScannerNotice(null);
     setIsModalOpen(true);
-  };
-
-  const addItem = (p) => {
-    setItems((prev) => {
-      const existing = prev.find((i) => i.product_id === p.id);
-      if (existing) {
-        return prev.map((i) => (i.product_id === p.id ? { ...i, quantity: i.quantity + 1 } : i));
-      }
-      return [
-        ...prev,
-        {
-          product_id: p.id,
-          product_name: p.name,
-          tamil_name: p.tamil_name,
-          quantity: 1,
-          refund_price: Number(p.selling_price || 0),
-          restocked: true
-        }
-      ];
-    });
-    setProdSearch('');
-  };
-
-  const removeItem = (id) => {
-    setItems((prev) => prev.filter((i) => i.product_id !== id));
+    setTimeout(() => {
+      if (prodSearchInputRef.current) prodSearchInputRef.current.focus();
+    }, 100);
   };
 
   const totalRefund = items.reduce((acc, i) => acc + (Number(i.quantity) * Number(i.refund_price)), 0);
@@ -121,6 +265,10 @@ export function SalesReturns() {
           </h2>
         </div>
         <div className="flex items-center gap-2">
+          <div className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 rounded text-xs font-semibold">
+            <ScanBarcode className="w-3.5 h-3.5 text-emerald-600" />
+            <span>Barcode Scanner Ready</span>
+          </div>
           <button
             onClick={handleOpenAdd}
             className="btn-primary text-xs py-1.5 px-3 flex items-center gap-1.5 shadow-xs font-bold"
@@ -215,13 +363,36 @@ export function SalesReturns() {
         <div className="fixed inset-0 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl border border-gray-300 overflow-hidden animate-fade-in flex flex-col max-h-[85vh]">
             <div className="bg-rose-900 text-white px-4 py-2.5 flex items-center justify-between">
-              <h3 className="font-bold text-xs uppercase tracking-wide">
-                Process Customer Sales Return
-              </h3>
+              <div className="flex items-center gap-2">
+                <RotateCcw className="w-4 h-4 text-rose-300" />
+                <h3 className="font-bold text-xs uppercase tracking-wide">
+                  Process Customer Sales Return
+                </h3>
+              </div>
               <button onClick={() => setIsModalOpen(false)} className="text-rose-200 hover:text-white">
                 <X className="w-4 h-4" />
               </button>
             </div>
+
+            {/* Scanner Info Banner */}
+            <div className="bg-rose-50 px-4 py-1.5 border-b border-rose-200 flex items-center justify-between text-xs text-rose-900">
+              <div className="flex items-center gap-1.5 font-bold text-[11px]">
+                <ScanBarcode className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Barcode Scanner Active: Scan items with USB scanner or Phone camera to add</span>
+              </div>
+              {scannerNotice && (
+                <span
+                  className={`text-[10px] font-bold px-2 py-0.5 rounded border ${
+                    scannerNotice.success
+                      ? 'bg-green-100 text-green-800 border-green-300'
+                      : 'bg-red-100 text-red-800 border-red-300'
+                  }`}
+                >
+                  {scannerNotice.text}
+                </span>
+              )}
+            </div>
+
             <form onSubmit={handleSaveReturn} className="p-4 space-y-3 text-xs flex-1 flex flex-col overflow-hidden">
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -247,17 +418,19 @@ export function SalesReturns() {
                 </div>
               </div>
 
-              {/* Product Search */}
+              {/* Product Search & Barcode Input */}
               <div className="relative">
                 <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-gray-400" />
                 <input
+                  ref={prodSearchInputRef}
                   type="text"
-                  placeholder="Search product to return..."
+                  placeholder="Scan product barcode or search product name..."
                   value={prodSearch}
                   onChange={(e) => setProdSearch(e.target.value)}
-                  className="form-input pl-9 w-full text-xs"
+                  onKeyDown={handleSearchKeyDown}
+                  className="form-input pl-9 w-full text-xs font-medium"
                 />
-                {prodSearch.trim() && (
+                {prodSearch.trim() && !/^\d{5,}$/.test(prodSearch.trim()) && (
                   <div className="absolute left-0 right-0 top-full mt-1 bg-white border border-gray-300 rounded shadow-lg max-h-40 overflow-y-auto z-50 divide-y divide-gray-100">
                     {products
                       .filter((p) => p.name.toLowerCase().includes(prodSearch.toLowerCase()))
@@ -292,7 +465,7 @@ export function SalesReturns() {
                     {items.length === 0 ? (
                       <tr>
                         <td colSpan="5" className="text-center py-8 text-gray-400">
-                          Search product above to add to return list.
+                          Scan barcode or search product above to add to return list.
                         </td>
                       </tr>
                     ) : (
