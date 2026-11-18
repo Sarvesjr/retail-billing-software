@@ -72,7 +72,8 @@ export function BarcodeListener({ children }) {
           e.preventDefault();
           e.stopPropagation();
 
-          if (e.key === 'Enter') {
+          if (e.key === 'Enter' || e.key === 'Tab') {
+            e.preventDefault();
             const barcode = auxBufferRef.current.trim();
             auxBufferRef.current = '';
             auxRapidCountRef.current = 0;
@@ -105,8 +106,8 @@ export function BarcodeListener({ children }) {
       const timeDiff = now - lastKeyTimeRef.current;
       lastKeyTimeRef.current = now;
 
-      // Enter key indicates end of barcode transmission from hardware scanner
-      if (e.key === 'Enter') {
+      // Enter or Tab key indicates end of barcode transmission from hardware scanner
+      if (e.key === 'Enter' || e.key === 'Tab') {
         const barcode = bufferRef.current.trim();
         bufferRef.current = '';
 

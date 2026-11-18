@@ -155,7 +155,10 @@ export function Billing() {
         setSelectedQuickDamageProduct(null);
         setDamageQty(1);
         setDamageReason('Broken / Leaking detected at counter');
-      } else if (e.key === 'Escape') {
+      } else if (e.key === 'Tab') {
+      e.preventDefault();
+      return;
+    } else if (e.key === 'Escape') {
         setShowDropdown(false);
         setIsCatalogOpen(false);
         setReceiptData(null);
@@ -522,6 +525,9 @@ export function Billing() {
 
       // 2. Direct barcode lookup in MySQL (always priority for scanned or typed codes)
       handleDirectBarcodeScan(query, 'HARDWARE_USB');
+    } else if (e.key === 'Tab') {
+      e.preventDefault();
+      return;
     } else if (e.key === 'Escape') {
       isNavigatingWithArrowsRef.current = false;
       setShowDropdown(false);
@@ -590,13 +596,12 @@ export function Billing() {
     );
   };
 
-  // Separate Column: Dynamic Free Sample quantity (from 0 to available products max left after subtracting current chosen to bill)
+  // Separate Column: Dynamic Free Sample quantity via stepper [-] / [+]
   const updateFreeQuantity = (id, newFreeQty) => {
-    const rawStr = String(newFreeQty ?? '').trim();
-    // Safety Intercept: If a hardware barcode scanner was fired while focus was in the free sample input,
-    // do NOT corrupt the free sample quantity of the previous product! Scan it as the intended product instead.
-    if (rawStr.length >= 5 && /^\d+$/.test(rawStr)) {
-      handleDirectBarcodeScan(rawStr, 'HARDWARE_USB');
+    const rawVal = Number(newFreeQty) || 0;
+    // Guard: Free sample units are only small integer quantities (e.g. 1-100).
+    // Any value >= 500 is an accidental barcode number: ignore it!
+    if (rawVal >= 500) {
       if (searchInputRef.current) searchInputRef.current.focus();
       return;
     }
@@ -606,11 +611,7 @@ export function Billing() {
         if (item.id !== id) return item;
         const paidQty = Number(item.qty) || 0;
         const maxFreeAllowed = Math.max(0, item.currentStock - paidQty);
-        let freeQty = Math.max(0, Number(newFreeQty) || 0);
-        if (freeQty > maxFreeAllowed) {
-          freeQty = maxFreeAllowed;
-          setErrorMsg(`Free samples for "${item.name}" capped at remaining available stock (${maxFreeAllowed} ${item.unit}).`);
-        }
+        const freeQty = Math.max(0, Math.min(maxFreeAllowed, rawVal));
         return {
           ...item,
           freeQty
@@ -1151,7 +1152,10 @@ export function Billing() {
                 if (e.key === 'Enter') {
                   e.preventDefault();
                   handleSubmitFeedback();
-                } else if (e.key === 'Escape') {
+                } else if (e.key === 'Tab') {
+      e.preventDefault();
+      return;
+    } else if (e.key === 'Escape') {
                   e.preventDefault();
                   handleDismissFeedback();
                 }
@@ -1260,18 +1264,26 @@ export function Billing() {
                             min="0"
                             max={maxPaidAllowed}
                             value={paidQty}
+                            tabIndex={-1}
                             onFocus={(e) => e.target.select()}
+                            onBlur={() => {
+                              if (searchInputRef.current) searchInputRef.current.focus();
+                            }}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
+                              if (e.key === 'Enter' || e.key === 'Tab') {
                                 e.preventDefault();
-                                const val = String(e.target.value || '').trim();
-                                if (val.length >= 5 && /^\d+$/.test(val)) {
-                                  handleDirectBarcodeScan(val, 'HARDWARE_USB');
-                                }
                                 if (searchInputRef.current) searchInputRef.current.focus();
                               }
                             }}
-                            onChange={(e) => updateQuantity(item.id, e.target.value)}
+                            onChange={(e) => {
+                              const val = String(e.target.value || '').trim();
+                              if (val.length >= 5 && /^\d+$/.test(val)) {
+                                handleDirectBarcodeScan(val, 'HARDWARE_USB');
+                                if (searchInputRef.current) searchInputRef.current.focus();
+                                return;
+                              }
+                              updateQuantity(item.id, e.target.value);
+                            }}
                             className="form-input w-16 text-center font-bold font-mono py-0.5 text-xs"
                           />
                           <div className="text-[9px] text-gray-500 font-mono mt-0.5">
@@ -1279,32 +1291,46 @@ export function Billing() {
                           </div>
                         </td>
 
-                        {/* Free Sample Separate Column: from 0 up to remaining available stock (currentStock - billedQty) */}
+                        {/* Free Sample Stepper: [+] and [-] buttons - Immune to barcode scanner interference */}
                         <td className="text-center bg-emerald-50/50 border-x border-emerald-300">
                           <div className="flex flex-col items-center">
-                            <input
-                              type="number"
-                              min="0"
-                              max={maxFreeAllowed}
-                              value={freeQty}
-                              onFocus={(e) => e.target.select()}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') {
-                                  e.preventDefault();
-                                  const val = String(e.target.value || '').trim();
-                                  if (val.length >= 5 && /^\d+$/.test(val)) {
-                                    handleDirectBarcodeScan(val, 'HARDWARE_USB');
-                                  }
+                            <div className="inline-flex items-center border border-emerald-400 rounded bg-white shadow-2xs overflow-hidden">
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                disabled={freeQty <= 0}
+                                onClick={() => {
+                                  updateFreeQuantity(item.id, Math.max(0, freeQty - 1));
                                   if (searchInputRef.current) searchInputRef.current.focus();
-                                }
-                              }}
-                              onChange={(e) => updateFreeQuantity(item.id, e.target.value)}
-                              className={`form-input w-16 text-center font-bold font-mono py-0.5 text-xs ${
-                                freeQty > 0
-                                  ? 'bg-emerald-100 text-emerald-950 border-emerald-500 focus:ring-emerald-500 font-extrabold'
-                                  : 'text-gray-700'
-                              }`}
-                            />
+                                }}
+                                className="px-2 py-0.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                                title="Decrease free sample"
+                              >
+                                -
+                              </button>
+                              <span
+                                className={`px-2 py-0.5 text-xs font-mono font-bold min-w-[28px] text-center select-none ${
+                                  freeQty > 0
+                                    ? 'bg-emerald-100 text-emerald-950 font-black'
+                                    : 'text-gray-700 bg-gray-50'
+                                }`}
+                              >
+                                {freeQty}
+                              </span>
+                              <button
+                                type="button"
+                                tabIndex={-1}
+                                disabled={freeQty >= maxFreeAllowed}
+                                onClick={() => {
+                                  updateFreeQuantity(item.id, Math.min(maxFreeAllowed, freeQty + 1));
+                                  if (searchInputRef.current) searchInputRef.current.focus();
+                                }}
+                                className="px-2 py-0.5 text-xs font-black text-emerald-800 hover:bg-emerald-100 disabled:opacity-25 disabled:pointer-events-none transition-colors"
+                                title="Increase free sample"
+                              >
+                                +
+                              </button>
+                            </div>
                             <span className="text-[9px] text-emerald-800 font-mono mt-0.5 font-bold">
                               max left: {maxFreeAllowed}
                             </span>
