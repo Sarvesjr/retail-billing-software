@@ -34,26 +34,45 @@ export function generateLosslessReceiptSvg(sale, shopSettings = {}) {
   let itemsSvg = '';
   let currentY = 195;
 
-  items.forEach((it, idx) => {
+  // Group items: paid items first, all free samples sorted to the bottom
+  const sortedItems = [...items].sort((a, b) => {
+    const aFree = Boolean(a.is_free_sample || a.isFreeSample);
+    const bFree = Boolean(b.is_free_sample || b.isFreeSample);
+    return (aFree ? 1 : 0) - (bFree ? 1 : 0);
+  });
+
+  sortedItems.forEach((it, idx) => {
     const rawName = it.product_name || it.productName || it.name || 'Item';
     const name = escapeXml(rawName);
     const isFree = Boolean(it.is_free_sample || it.isFreeSample);
-    const sampleTag = isFree ? ' [FREE]' : '';
+    const sampleTag = isFree ? ' [FREE SAMPLE]' : '';
     const rawTamil = it.tamil_name || it.tamilName || it.product_tamil_name || '';
     const tamil = rawTamil ? escapeXml(rawTamil) : '';
-    const displayName = tamil ? `${name.slice(0, 16)}${sampleTag} (${tamil.slice(0, 10)})` : `${name.slice(0, 22)}${sampleTag}`;
+    const displayName = tamil ? `${name.slice(0, 16)}${sampleTag} (${tamil.slice(0, 8)})` : `${name.slice(0, 24)}${sampleTag}`;
     const qty = Number(it.quantity !== undefined ? it.quantity : (it.qty !== undefined ? it.qty : 1));
-    const unitPrice = isFree ? '0.00' : Number(it.unit_price !== undefined ? it.unit_price : (it.unitPrice !== undefined ? it.unitPrice : (it.selling_price !== undefined ? it.selling_price : (it.sellingPrice || 0)))).toFixed(2);
-    const lineTotal = isFree ? '0.00' : Number(it.line_total !== undefined ? it.line_total : (it.lineTotal !== undefined ? it.lineTotal : (qty * Number(unitPrice)))).toFixed(2);
+    const unitPrice = isFree ? 'FREE' : Number(it.unit_price !== undefined ? it.unit_price : (it.unitPrice !== undefined ? it.unitPrice : (it.selling_price !== undefined ? it.selling_price : (it.sellingPrice || 0)))).toFixed(2);
+    const lineTotal = isFree ? '₹0.00' : `₹${Number(it.line_total !== undefined ? it.line_total : (it.lineTotal !== undefined ? it.lineTotal : (qty * Number(unitPrice)))).toFixed(2)}`;
 
-    itemsSvg += `
+    if (isFree) {
+      itemsSvg += `
+      <g transform="translate(0, ${currentY})">
+        <rect x="15" y="-12" width="350" height="20" rx="3" fill="#ecfdf5" stroke="#a7f3d0" stroke-width="0.75" />
+        <text x="20" y="0" font-family="'Courier New', monospace" font-size="10" font-weight="bold" fill="#065f46">${idx + 1}. ${displayName}</text>
+        <text x="190" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="middle" fill="#047857">${qty}</text>
+        <text x="270" y="0" font-family="'Courier New', monospace" font-size="10" font-weight="bold" text-anchor="end" fill="#059669">FREE</text>
+        <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#059669">₹0.00</text>
+      </g>
+    `;
+    } else {
+      itemsSvg += `
       <g transform="translate(0, ${currentY})">
         <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">${idx + 1}. ${displayName}</text>
         <text x="190" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="middle" fill="#000">${qty}</text>
         <text x="270" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="end" fill="#000">₹${unitPrice}</text>
-        <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#000">₹${lineTotal}</text>
+        <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#000">${lineTotal}</text>
       </g>
     `;
+    }
     currentY += itemRowHeight;
   });
 

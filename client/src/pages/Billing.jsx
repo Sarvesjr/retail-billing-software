@@ -781,10 +781,10 @@ export function Billing() {
     setErrorMsg('');
 
     try {
+      // 1. Regular paid items first
       const saleItems = [];
       for (const i of cart) {
         const paidQty = Number(i.qty) || 0;
-        const freeQty = Number(i.freeQty) || 0;
         if (paidQty > 0) {
           saleItems.push({
             id: i.id,
@@ -797,6 +797,10 @@ export function Billing() {
             discount_amount: Number(i.discountAmount) || 0
           });
         }
+      }
+      // 2. All Free Samples placed strictly at the bottom
+      for (const i of cart) {
+        const freeQty = Number(i.freeQty) || 0;
         if (freeQty > 0) {
           saleItems.push({
             id: i.id,
@@ -828,7 +832,7 @@ export function Billing() {
 
       const res = await api.createSale(salePayload);
       
-      // Open Thermal Receipt Modal
+      // Open Thermal Receipt Modal - Paid items first, Free samples at the bottom on green
       const receiptItems = [];
       for (const it of cart) {
         if (Number(it.qty) > 0) {
@@ -841,10 +845,12 @@ export function Billing() {
             isFreeSample: false
           });
         }
+      }
+      for (const it of cart) {
         if (Number(it.freeQty) > 0) {
           receiptItems.push({
             ...it,
-            name: `${it.name} [FREE SAMPLE]`,
+            name: it.name,
             qty: Number(it.freeQty),
             sellingPrice: 0,
             lineTotal: 0,
@@ -1159,7 +1165,7 @@ export function Billing() {
                   <th>{t('barcode')} / {t('sku')}</th>
                   <th className="text-right">{t('price')}</th>
                   <th className="text-center w-20">Billed Qty</th>
-                  <th className="text-center w-28 bg-purple-50 text-purple-900 border-x border-purple-200">
+                  <th className="text-center w-28 bg-emerald-50 text-emerald-900 border-x border-emerald-300 font-bold">
                     Free Sample (இலவசம்)
                   </th>
                   <th className="text-right">{t('gst')}</th>
@@ -1197,13 +1203,13 @@ export function Billing() {
                     const maxPaidAllowed = Math.max(0, Number(item.currentStock) - freeQty);
 
                     return (
-                      <tr key={item.id} className={freeQty > 0 ? 'bg-purple-50/30' : ''}>
+                      <tr key={item.id} className={freeQty > 0 ? 'bg-emerald-50/40' : ''}>
                         <td className="text-center font-mono text-gray-500">{idx + 1}</td>
                         <td>
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span className="font-bold text-gray-900">{item.name}</span>
                             {freeQty > 0 && (
-                              <span className="bg-purple-600 text-white text-[9px] font-bold px-1.5 py-0.2 rounded font-mono">
+                              <span className="bg-emerald-600 text-white text-[9px] font-bold px-1.5 py-0.2 rounded font-mono shadow-xs">
                                 +{freeQty} FREE SAMPLE
                               </span>
                             )}
@@ -1231,7 +1237,7 @@ export function Billing() {
                         </td>
 
                         {/* Free Sample Separate Column: from 0 up to remaining available stock (currentStock - billedQty) */}
-                        <td className="text-center bg-purple-50/50 border-x border-purple-200">
+                        <td className="text-center bg-emerald-50/50 border-x border-emerald-300">
                           <div className="flex flex-col items-center">
                             <input
                               type="number"
@@ -1241,11 +1247,11 @@ export function Billing() {
                               onChange={(e) => updateFreeQuantity(item.id, e.target.value)}
                               className={`form-input w-16 text-center font-bold font-mono py-0.5 text-xs ${
                                 freeQty > 0
-                                  ? 'bg-purple-100 text-purple-950 border-purple-400 focus:ring-purple-500'
+                                  ? 'bg-emerald-100 text-emerald-950 border-emerald-500 focus:ring-emerald-500 font-extrabold'
                                   : 'text-gray-700'
                               }`}
                             />
-                            <span className="text-[9px] text-purple-700 font-mono mt-0.5 font-semibold">
+                            <span className="text-[9px] text-emerald-800 font-mono mt-0.5 font-bold">
                               max left: {maxFreeAllowed}
                             </span>
                           </div>
@@ -1311,7 +1317,7 @@ export function Billing() {
                 {cart.reduce((a, b) => a + (Number(b.qty) || 0) + (Number(b.freeQty) || 0), 0)} PCS
               </b>
               {cart.some((it) => (Number(it.freeQty) || 0) > 0) && (
-                <span className="ml-2 text-purple-700 font-bold font-mono">
+                <span className="ml-2 text-emerald-700 font-bold font-mono">
                   (Paid: {cart.reduce((a, b) => a + (Number(b.qty) || 0), 0)}, Free Samples:{' '}
                   {cart.reduce((a, b) => a + (Number(b.freeQty) || 0), 0)})
                 </span>
@@ -1788,14 +1794,52 @@ export function Billing() {
                 </thead>
                 <tbody>
                   {receiptData.items.map((it, idx) => (
-                    <tr key={idx}>
-                      <td className="py-0.5">
-                        <div className="font-bold truncate max-w-[120px]">{it.name}</div>
-                        {it.tamilName && <div className="text-[9px] text-gray-600">{it.tamilName}</div>}
+                    <tr
+                      key={idx}
+                      className={
+                        it.isFreeSample
+                          ? 'bg-emerald-50 text-emerald-950 font-medium border-y border-emerald-300'
+                          : ''
+                      }
+                    >
+                      <td className="py-1">
+                        <div className="font-bold flex items-center gap-1.5 flex-wrap">
+                          <span className={it.isFreeSample ? 'text-emerald-950 font-bold' : 'truncate max-w-[130px]'}>
+                            {it.name}
+                          </span>
+                          {it.isFreeSample && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-600 text-white shadow-xs tracking-wider uppercase">
+                              ★ FREE SAMPLE / இலவசம்
+                            </span>
+                          )}
+                        </div>
+                        {it.tamilName && (
+                          <div className={`text-[9px] ${it.isFreeSample ? 'text-emerald-700 font-medium' : 'text-gray-600'}`}>
+                            {it.tamilName}
+                          </div>
+                        )}
                       </td>
-                      <td className="text-center font-bold">{it.qty}</td>
-                      <td className="text-right">₹{it.sellingPrice.toFixed(2)}</td>
-                      <td className="text-right font-bold">₹{it.lineTotal.toFixed(2)}</td>
+                      <td className="text-center font-bold">
+                        <span className={it.isFreeSample ? 'text-emerald-800' : ''}>{it.qty}</span>
+                      </td>
+                      <td className="text-right font-semibold">
+                        {it.isFreeSample ? (
+                          <span className="text-emerald-800 font-extrabold bg-emerald-100 px-1 py-0.5 rounded text-[9px]">
+                            FREE
+                          </span>
+                        ) : (
+                          `₹${it.sellingPrice.toFixed(2)}`
+                        )}
+                      </td>
+                      <td className="text-right font-bold">
+                        {it.isFreeSample ? (
+                          <span className="text-emerald-800 font-extrabold bg-emerald-100 px-1 py-0.5 rounded text-[9px]">
+                            ₹0.00
+                          </span>
+                        ) : (
+                          `₹${it.lineTotal.toFixed(2)}`
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>

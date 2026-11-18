@@ -557,24 +557,63 @@ export function PreviousBills() {
                           </tr>
                         </thead>
                         <tbody>
-                          {billDetails.items.map((it, i) => (
-                            <tr key={i}>
-                              <td>
-                                <div className="font-semibold text-gray-900">{it.product_name}</div>
-                                {it.tamil_name && (
-                                  <div className="text-[11px] text-gray-500">{it.tamil_name}</div>
-                                )}
-                                {it.barcode && (
-                                  <div className="text-[10px] font-mono text-gray-400">{it.barcode}</div>
-                                )}
-                              </td>
-                              <td className="text-center font-mono font-bold">{it.quantity}</td>
-                              <td className="text-right font-mono">₹{Number(it.unit_price).toFixed(2)}</td>
-                              <td className="text-right font-mono font-bold text-blue-900">
-                                ₹{Number(it.line_total).toFixed(2)}
-                              </td>
-                            </tr>
-                          ))}
+                          {[...billDetails.items]
+                            .sort((a, b) => (Boolean(a.is_free_sample) ? 1 : 0) - (Boolean(b.is_free_sample) ? 1 : 0))
+                            .map((it, i) => {
+                              const isFree = Boolean(it.is_free_sample);
+                              return (
+                                <tr
+                                  key={i}
+                                  className={
+                                    isFree
+                                      ? 'bg-emerald-50 text-emerald-950 font-medium border-y border-emerald-300'
+                                      : ''
+                                  }
+                                >
+                                  <td>
+                                    <div className="font-semibold text-gray-900 flex items-center gap-1.5 flex-wrap">
+                                      <span className={isFree ? 'text-emerald-950 font-bold' : ''}>
+                                        {it.product_name}
+                                      </span>
+                                      {isFree && (
+                                        <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[8px] font-black bg-emerald-600 text-white uppercase tracking-wider shadow-xs">
+                                          ★ FREE SAMPLE / இலவசம்
+                                        </span>
+                                      )}
+                                    </div>
+                                    {it.tamil_name && (
+                                      <div className={`text-[11px] ${isFree ? 'text-emerald-700 font-medium' : 'text-gray-500'}`}>
+                                        {it.tamil_name}
+                                      </div>
+                                    )}
+                                    {it.barcode && (
+                                      <div className="text-[10px] font-mono text-gray-400">{it.barcode}</div>
+                                    )}
+                                  </td>
+                                  <td className="text-center font-mono font-bold">
+                                    <span className={isFree ? 'text-emerald-800' : ''}>{it.quantity}</span>
+                                  </td>
+                                  <td className="text-right font-mono font-semibold">
+                                    {isFree ? (
+                                      <span className="text-emerald-800 font-extrabold bg-emerald-100 px-1 py-0.5 rounded text-[10px]">
+                                        FREE
+                                      </span>
+                                    ) : (
+                                      `₹${Number(it.unit_price).toFixed(2)}`
+                                    )}
+                                  </td>
+                                  <td className="text-right font-mono font-bold">
+                                    {isFree ? (
+                                      <span className="text-emerald-800 font-extrabold bg-emerald-100 px-1 py-0.5 rounded text-[10px]">
+                                        ₹0.00
+                                      </span>
+                                    ) : (
+                                      <span className="text-blue-900">₹{Number(it.line_total).toFixed(2)}</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
                         </tbody>
                       </table>
                     </div>
