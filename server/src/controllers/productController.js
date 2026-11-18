@@ -99,3 +99,18 @@ export async function updateProduct(req, res, next) {
   }
 }
 
+export async function deleteProduct(req, res, next) {
+  try {
+    const id = parseInt(req.params.id, 10);
+    const result = await productService.deleteProduct(id);
+    res.json({
+      success: true,
+      message: result.message,
+      data: result
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+

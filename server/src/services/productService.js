@@ -407,3 +407,55 @@ export async function updateProduct(id, productData) {
   });
 }
 
+export async function deleteProduct(id) {
+  const pool = getPool();
+  const prodId = Number(id);
+  if (!prodId) throw new Error('Invalid product ID');
+
+  const [pRows] = await pool.query('SELECT id, name, sku, is_active FROM products WHERE id = ?', [prodId]);
+  if (!pRows.length) throw new Error(`Product #${prodId} not found`);
+  const prod = pRows[0];
+
+  // Check if product has historical transactions (sales or inward purchases)
+  const [saleCount] = await pool.query(
+    'SELECT COUNT(*) as count FROM sale_items WHERE product_id = ?',
+    [prodId]
+  );
+  const [purchCount] = await pool.query(
+    'SELECT COUNT(*) as count FROM purchase_items WHERE product_id = ?',
+    [prodId]
+  );
+
+  const hasHistory = (Number(saleCount[0]?.count) > 0) || (Number(purchCount[0]?.count) > 0);
+
+  if (hasHistory) {
+    // Has transaction history: deactivate product so past bills & audit trails stay intact
+    await pool.query('UPDATE products SET is_active = FALSE WHERE id = ?', [prodId]);
+    await pool.execute(
+      `INSERT INTO audit_logs (action, entity_name, entity_id, details) VALUES ('DEACTIVATE', 'PRODUCT', ?, ?)`,
+      [prodId, JSON.stringify({ name: prod.name, sku: prod.sku, reason: 'Deleted by user with transaction history' })]
+    );
+    return {
+      success: true,
+      id: prodId,
+      softDeleted: true,
+      message: `Product "${prod.name}" (${prod.sku}) has past transactions and has been deactivated/removed from active catalog.`
+    };
+  } else {
+    // No sales or purchase history: perform clean deletion
+    await pool.query('DELETE FROM damaged_stock_log WHERE product_id = ?', [prodId]);
+    await pool.query('DELETE FROM products WHERE id = ?', [prodId]);
+    await pool.execute(
+      `INSERT INTO audit_logs (action, entity_name, entity_id, details) VALUES ('DELETE', 'PRODUCT', ?, ?)`,
+      [prodId, JSON.stringify({ name: prod.name, sku: prod.sku, reason: 'Permanently deleted by user' })]
+    );
+    return {
+      success: true,
+      id: prodId,
+      softDeleted: false,
+      message: `Product "${prod.name}" (${prod.sku}) permanently deleted.`
+    };
+  }
+}
+
+

@@ -13,6 +13,7 @@ import {
   Smartphone,
   ArrowRight,
   Edit,
+  Trash2,
   AlertTriangle,
   RotateCcw,
   Sparkles,
@@ -37,6 +38,10 @@ export function Products() {
   const [successMsg, setSuccessMsg] = useState('');
   const [scannerNotice, setScannerNotice] = useState('');
   const [recentScannedCode, setRecentScannedCode] = useState(null);
+
+  // Delete product state
+  const [productToDelete, setProductToDelete] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Existing product detection state
   const [existingProductFound, setExistingProductFound] = useState(null);
@@ -303,6 +308,29 @@ export function Products() {
       }
     } catch (err) {
       // already populated from p
+    }
+  };
+
+  const handleOpenDeleteConfirm = (p) => {
+    setProductToDelete(p);
+    setErrorMsg('');
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!productToDelete) return;
+    setDeleting(true);
+    setErrorMsg('');
+    try {
+      const prodId = productToDelete.id || editingProductId;
+      const res = await api.deleteProduct(prodId);
+      setSuccessMsg(res.message || `Product "${productToDelete.name}" deleted successfully.`);
+      setProductToDelete(null);
+      setIsModalOpen(false);
+      loadData();
+    } catch (err) {
+      setErrorMsg(err.message || 'Failed to delete product');
+    } finally {
+      setDeleting(false);
     }
   };
 
@@ -629,17 +657,30 @@ export function Products() {
                       )}
                     </td>
                     <td className="text-center">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleOpenEdit(p);
-                        }}
-                        className="px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded inline-flex items-center gap-1"
-                        title="Edit product details"
-                      >
-                        <Edit className="w-3 h-3" />
-                        <span>{t('edit')}</span>
-                      </button>
+                      <div className="flex items-center justify-center gap-1">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenEdit(p);
+                          }}
+                          className="px-2 py-0.5 text-[11px] font-bold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded inline-flex items-center gap-1"
+                          title="Edit product details"
+                        >
+                          <Edit className="w-3 h-3" />
+                          <span>{t('edit')}</span>
+                        </button>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleOpenDeleteConfirm(p);
+                          }}
+                          className="px-2 py-0.5 text-[11px] font-bold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded inline-flex items-center gap-1"
+                          title="Delete product"
+                        >
+                          <Trash2 className="w-3 h-3" />
+                          <span>{t('delete') || 'Delete'}</span>
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -1114,6 +1155,25 @@ export function Products() {
                 </div>
 
                 <div className="flex items-center gap-2">
+                  {isEditMode && (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleOpenDeleteConfirm({
+                          id: editingProductId,
+                          name: formData.name,
+                          sku: formData.sku,
+                          barcode: formData.barcode,
+                          tamil_name: formData.tamil_name
+                        })
+                      }
+                      className="btn-secondary text-xs py-1 px-3 text-rose-700 hover:bg-rose-50 border-rose-300 font-bold flex items-center gap-1 mr-2"
+                      title="Delete this product"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>{lang === 'ta' ? 'பொருளை நீக்கு' : 'Delete Product'}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {
@@ -1223,6 +1283,64 @@ export function Products() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+      {/* Delete Product Confirmation Modal */}
+      {productToDelete && (
+        <div className="fixed inset-0 z-70 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-lg shadow-2xl border border-gray-300 w-full max-w-sm overflow-hidden animate-fade-in">
+            <div className="bg-rose-900 text-white px-4 py-2.5 flex items-center justify-between font-bold text-xs uppercase tracking-wide">
+              <span className="flex items-center gap-1.5">
+                <Trash2 className="w-4 h-4 text-rose-300" />
+                <span>{lang === 'ta' ? 'பொருளை நீக்குதல்' : 'Delete Product'}</span>
+              </span>
+              <button
+                type="button"
+                onClick={() => setProductToDelete(null)}
+                className="text-rose-200 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs">
+              <div className="bg-rose-50 border border-rose-200 rounded p-2.5">
+                <div className="font-bold text-gray-900 text-sm">{productToDelete.name}</div>
+                {productToDelete.tamil_name && (
+                  <div className="text-gray-600 text-xs">{productToDelete.tamil_name}</div>
+                )}
+                <div className="text-[11px] text-gray-600 font-mono mt-1">
+                  SKU: {productToDelete.sku} {productToDelete.barcode ? `| Barcode: ${productToDelete.barcode}` : ''}
+                </div>
+              </div>
+
+              <p className="text-gray-700 font-medium">
+                {lang === 'ta'
+                  ? 'நிச்சயமாக இந்தப் பொருளை நீக்க வேண்டுமா? இது பட்டியலில் இருந்தும் பில்லிங் திரையில் இருந்தும் அகற்றப்படும்.'
+                  : 'Are you sure you want to delete this product? It will be removed from the catalog, search, and billing counter.'}
+              </p>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-gray-200">
+                <button
+                  type="button"
+                  onClick={() => setProductToDelete(null)}
+                  disabled={deleting}
+                  className="btn-secondary text-xs"
+                >
+                  {t('cancel')}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleConfirmDelete}
+                  disabled={deleting}
+                  className="btn-primary text-xs bg-rose-700 hover:bg-rose-800 border-rose-800 font-bold flex items-center gap-1"
+                >
+                  <Trash2 className="w-3.5 h-3.5" />
+                  <span>{deleting ? 'Deleting...' : (lang === 'ta' ? 'உறுதி செய்து நீக்கு' : 'Confirm Delete')}</span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
