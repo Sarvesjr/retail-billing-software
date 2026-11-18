@@ -859,7 +859,8 @@ export function Billing() {
         customer: customerName,
         items: receiptItems,
         subtotal,
-        discountTotal,
+        discountTotal: totalDiscount,
+        totalDiscount,
         taxTotal,
         grandTotal,
         paymentMode,
@@ -1806,6 +1807,12 @@ export function Billing() {
                   <span>Subtotal:</span>
                   <span>₹{receiptData.subtotal.toFixed(2)}</span>
                 </div>
+                {receiptData.totalDiscount > 0 && (
+                  <div className="flex justify-between text-emerald-700 text-[10px] font-semibold">
+                    <span>Discount:</span>
+                    <span>-₹{receiptData.totalDiscount.toFixed(2)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between text-gray-600 text-[10px]">
                   <span>GST Tax:</span>
                   <span>+₹{receiptData.taxTotal.toFixed(2)}</span>
