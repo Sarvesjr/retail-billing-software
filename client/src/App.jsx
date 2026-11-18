@@ -16,6 +16,7 @@ import { Suppliers } from './pages/Suppliers';
 import { Customers } from './pages/Customers';
 import { Inventory } from './pages/Inventory';
 import { SalesReturns } from './pages/SalesReturns';
+import { PurchaseReturns } from './pages/PurchaseReturns';
 import { Expenses } from './pages/Expenses';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
@@ -73,7 +74,7 @@ export default function App() {
                   <Route path="/customers" element={<Customers />} />
                   <Route path="/inventory" element={<Inventory />} />
                   <Route path="/sales-returns" element={<SalesReturns />} />
-                  <Route path="/purchase-returns" element={<SalesReturns defaultTab="supplier" />} />
+                  <Route path="/purchase-returns" element={<PurchaseReturns />} />
                   <Route path="/outstanding" element={<Customers />} />
                   <Route path="/expenses" element={<Expenses />} />
                   <Route path="/feedback" element={<Feedback />} />
