@@ -264,3 +264,94 @@ export async function getDamagedAndExpiredStock({ supplier_id = null } = {}) {
     expiredProducts
   };
 }
+
+/**
+ * Quarantines damaged stock directly from the POS billing counter or inventory
+ * Deducts from salable product_stock, increments products.damaged_stock, and logs to damaged_stock_log
+ */
+export async function quarantineDamagedStock({
+  product_id,
+  damaged_quantity = 1,
+  damage_reason = 'Damaged at billing counter',
+  source = 'BILLING_COUNTER'
+}) {
+  const prodId = Number(product_id);
+  const qty = Math.max(1, Number(damaged_quantity) || 1);
+  if (!prodId) throw new Error('Valid product ID is required');
+
+  return await withTransaction(async (conn) => {
+    // 1. Lock product & stock
+    const [pRows] = await conn.query(
+      `SELECT p.id, p.name, p.sku, p.supplier_id, p.expiry_date, p.damaged_stock, ps.current_stock
+       FROM products p
+       JOIN product_stock ps ON p.id = ps.product_id
+       WHERE p.id = ? FOR UPDATE`,
+      [prodId]
+    );
+
+    if (pRows.length === 0) throw new Error(`Product #${prodId} not found`);
+
+    const prod = pRows[0];
+    const beforeStock = Number(prod.current_stock || 0);
+    const beforeDamaged = Number(prod.damaged_stock || 0);
+
+    const actualDeduct = Math.min(beforeStock, qty);
+    const afterStock = Math.max(0, beforeStock - actualDeduct);
+    const afterDamaged = beforeDamaged + qty;
+
+    // 2. Update stock & damaged stock
+    await conn.query(
+      `UPDATE product_stock SET current_stock = ? WHERE product_id = ?`,
+      [afterStock, prodId]
+    );
+
+    await conn.query(
+      `UPDATE products SET damaged_stock = ?, is_damaged = 1, damage_reason = ? WHERE id = ?`,
+      [afterDamaged, damage_reason || 'Damaged at billing counter', prodId]
+    );
+
+    // 3. Insert into damaged_stock_log
+    const [dslRes] = await conn.query(
+      `INSERT INTO damaged_stock_log (
+        product_id, product_name, supplier_id, source, damaged_quantity,
+        damage_reason, expiry_date, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'PENDING_RETURN')`,
+      [
+        prodId,
+        prod.name,
+        prod.supplier_id || null,
+        source || 'BILLING_COUNTER',
+        qty,
+        damage_reason || 'Damaged at billing counter',
+        prod.expiry_date || null
+      ]
+    );
+
+    // 4. Log in stock movements
+    await conn.query(
+      `INSERT INTO stock_movements (
+        product_id, movement_type, reference_id, reference_no,
+        quantity, stock_before, stock_after, notes
+      ) VALUES (?, 'ADJUSTMENT_SUB', ?, ?, ?, ?, ?, ?)`,
+      [
+        prodId,
+        dslRes.insertId,
+        `DMG-LOG-${dslRes.insertId}`,
+        -actualDeduct,
+        beforeStock,
+        afterStock,
+        `POS Quarantine: ${damage_reason || 'Damaged at billing counter'}`
+      ]
+    );
+
+    return {
+      productId: prodId,
+      productName: prod.name,
+      quarantinedQty: qty,
+      currentStock: afterStock,
+      damagedStock: afterDamaged,
+      logId: dslRes.insertId
+    };
+  });
+}
+

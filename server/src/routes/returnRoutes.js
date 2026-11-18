@@ -14,4 +14,7 @@ router.post('/purchases', returnController.createPurchaseReturn);
 // Damaged & Expired Products ledger for returning
 router.get('/damaged-expired', returnController.getDamagedAndExpiredStock);
 
+// Quarantine Damaged stock directly from Billing POS or Inventory
+router.post('/quarantine-damaged', returnController.quarantineDamagedStock);
+
 export default router;

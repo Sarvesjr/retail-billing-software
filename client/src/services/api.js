@@ -118,6 +118,7 @@ export const api = {
     const query = new URLSearchParams(params).toString();
     return fetchApi(`/returns/damaged-expired${query ? '?' + query : ''}`);
   },
+  quarantineDamagedStock: (data) => fetchApi('/returns/quarantine-damaged', { method: 'POST', body: JSON.stringify(data) }),
 
   // Customer Feedback
   getFeedbacks: (params = {}) => {

@@ -45,3 +45,13 @@ export async function getDamagedAndExpiredStock(req, res, next) {
     next(error);
   }
 }
+
+export async function quarantineDamagedStock(req, res, next) {
+  try {
+    const result = await returnService.quarantineDamagedStock(req.body);
+    res.status(200).json({ success: true, data: result });
+  } catch (error) {
+    next(error);
+  }
+}
+

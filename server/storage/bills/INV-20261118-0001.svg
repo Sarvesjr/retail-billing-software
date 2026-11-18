@@ -25,7 +25,7 @@
 
   <!-- Invoice Meta Details -->
   <text x="15" y="118" class="mono bold" font-size="10" fill="#111827">Bill No: INV-20261118-0001</text>
-  <text x="365" y="118" class="mono right" font-size="10" fill="#4b5563">18/11/2026, 5:38:57 pm</text>
+  <text x="365" y="118" class="mono right" font-size="10" fill="#4b5563">18/11/2026, 8:24:46 pm</text>
   <text x="15" y="134" class="mono" font-size="10" fill="#374151">Cust: Walk-in Customer</text>
   <text x="365" y="134" class="mono bold right" font-size="10" fill="#1e40af">Mode: CASH</text>
 
@@ -41,17 +41,17 @@
   <!-- Rendered Line Items -->
   
       <g transform="translate(0, 195)">
-        <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">1. Amul Milk 500ml  [FREE] (ஆவின் பால்)</text>
-        <text x="190" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="middle" fill="#000">1</text>
-        <text x="270" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="end" fill="#000">₹0.00</text>
-        <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#000">₹0.00</text>
+        <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">1. Horlicks 500g Ja (ஹார்லிக்ஸ்)</text>
+        <text x="190" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="middle" fill="#000">2</text>
+        <text x="270" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="end" fill="#000">₹180.00</text>
+        <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#000">₹360.00</text>
       </g>
     
       <g transform="translate(0, 221)">
-        <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">2. Amul Milk 500ml  (ஆவின் பால்)</text>
-        <text x="190" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="middle" fill="#000">2</text>
-        <text x="270" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="end" fill="#000">₹30.00</text>
-        <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#000">₹60.00</text>
+        <text x="15" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" fill="#000">2. Horlicks 500g Ja [FREE] (ஹார்லிக்ஸ்)</text>
+        <text x="190" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="middle" fill="#000">1</text>
+        <text x="270" y="0" font-family="'Courier New', monospace" font-size="11" text-anchor="end" fill="#000">₹0.00</text>
+        <text x="365" y="0" font-family="'Courier New', monospace" font-size="11" font-weight="bold" text-anchor="end" fill="#000">₹0.00</text>
       </g>
     
 
@@ -59,22 +59,19 @@
   <line x1="15" y1="262" x2="365" y2="262" class="divider" />
 
   <text x="15" y="282" class="mono" font-size="11" fill="#374151">Subtotal:</text>
-  <text x="365" y="282" class="mono right" font-size="11" fill="#111827">₹60.00</text>
+  <text x="365" y="282" class="mono right" font-size="11" fill="#111827">₹360.00</text>
 
   
-  <text x="15" y="298" class="mono" font-size="10" fill="#dc2626">Discount:</text>
-  <text x="365" y="298" class="mono right" font-size="10" fill="#dc2626">-₹10.00</text>
-  
 
-  <text x="15" y="314" class="mono" font-size="10" fill="#6b7280">GST Tax:</text>
-  <text x="365" y="314" class="mono right" font-size="10" fill="#4b5563">+₹0.00</text>
+  <text x="15" y="300" class="mono" font-size="10" fill="#6b7280">GST Tax:</text>
+  <text x="365" y="300" class="mono right" font-size="10" fill="#4b5563">+₹0.00</text>
 
-  <rect x="15" y="328" width="350" height="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" rx="2" />
-  <text x="25" y="348" class="mono heavy" font-size="13" fill="#0f172a">NET TOTAL:</text>
-  <text x="355" y="348" class="mono heavy right" font-size="15" fill="#1e3a8a">₹50.00</text>
+  <rect x="15" y="312" width="350" height="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" rx="2" />
+  <text x="25" y="332" class="mono heavy" font-size="13" fill="#0f172a">NET TOTAL:</text>
+  <text x="355" y="332" class="mono heavy right" font-size="15" fill="#1e3a8a">₹360.00</text>
 
   <!-- Simulated Barcode of Invoice Number -->
-  <g transform="translate(70, 392)">
+  <g transform="translate(70, 377)">
     <rect x="0" y="0" width="240" height="24" fill="#000000" opacity="0.05" />
     <!-- Barcode lines -->
     <rect x="10" y="0" width="2.2" height="22" fill="#111827"/><rect x="14" y="0" width="3" height="22" fill="#111827"/><rect x="19.2" y="0" width="1.2" height="22" fill="#111827"/><rect x="22.2" y="0" width="1" height="22" fill="#111827"/><rect x="25.4" y="0" width="3.2" height="22" fill="#111827"/><rect x="30.4" y="0" width="2" height="22" fill="#111827"/><rect x="34.6" y="0" width="1.2" height="22" fill="#111827"/><rect x="37.6" y="0" width="1" height="22" fill="#111827"/><rect x="40.800000000000004" y="0" width="3.2" height="22" fill="#111827"/><rect x="45.800000000000004" y="0" width="2" height="22" fill="#111827"/><rect x="50.00000000000001" y="0" width="1.2" height="22" fill="#111827"/><rect x="53.00000000000001" y="0" width="1" height="22" fill="#111827"/><rect x="56.20000000000001" y="0" width="3.2" height="22" fill="#111827"/><rect x="61.20000000000001" y="0" width="2" height="22" fill="#111827"/><rect x="65.4" y="0" width="1.2" height="22" fill="#111827"/><rect x="68.4" y="0" width="1" height="22" fill="#111827"/><rect x="71.60000000000001" y="0" width="2.2" height="22" fill="#111827"/><rect x="75.60000000000001" y="0" width="3" height="22" fill="#111827"/><rect x="80.80000000000001" y="0" width="2.2" height="22" fill="#111827"/><rect x="84.80000000000001" y="0" width="3" height="22" fill="#111827"/><rect x="90.00000000000001" y="0" width="2.2" height="22" fill="#111827"/><rect x="94.00000000000001" y="0" width="3" height="22" fill="#111827"/><rect x="99.20000000000002" y="0" width="3.2" height="22" fill="#111827"/><rect x="104.20000000000002" y="0" width="2" height="22" fill="#111827"/><rect x="108.40000000000002" y="0" width="1.2" height="22" fill="#111827"/><rect x="111.40000000000002" y="0" width="1" height="22" fill="#111827"/><rect x="114.60000000000002" y="0" width="1.2" height="22" fill="#111827"/><rect x="117.60000000000002" y="0" width="1" height="22" fill="#111827"/><rect x="120.80000000000003" y="0" width="1.2" height="22" fill="#111827"/><rect x="123.80000000000003" y="0" width="1" height="22" fill="#111827"/><rect x="127.00000000000003" y="0" width="1.2" height="22" fill="#111827"/><rect x="130.00000000000003" y="0" width="1" height="22" fill="#111827"/><rect x="133.20000000000002" y="0" width="2.2" height="22" fill="#111827"/><rect x="137.20000000000002" y="0" width="3" height="22" fill="#111827"/>
@@ -82,7 +79,7 @@
   </g>
 
   <!-- Receipt Footer -->
-  <line x1="15" y1="447" x2="365" y2="447" class="divider" />
-  <text x="190" y="463" class="mono bold center" font-size="10" fill="#6b7280">Thank you for your visit! / வருகைக்கு நன்றி! மீண்டும் வருக!</text>
-  <text x="190" y="475" class="mono center" font-size="8" fill="#9ca3af">*** 100% Lossless Digital Bill Archive ***</text>
+  <line x1="15" y1="432" x2="365" y2="432" class="divider" />
+  <text x="190" y="448" class="mono bold center" font-size="10" fill="#6b7280">Thank you for your visit! / வருகைக்கு நன்றி! மீண்டும் வருக!</text>
+  <text x="190" y="460" class="mono center" font-size="8" fill="#9ca3af">*** 100% Lossless Digital Bill Archive ***</text>
 </svg>

@@ -25,12 +25,28 @@ import {
   Tag,
   Star,
   MessageSquareHeart,
-  Clock
+  Clock,
+  AlertTriangle,
+  ShieldAlert
 } from 'lucide-react';
 
 export function Billing() {
   const { t, lang } = useI18n();
   const [cart, setCart] = useState([]);
+
+  // Damaged Product Reporting during Billing (POS Quarantine)
+  const [damagedModalItem, setDamagedModalItem] = useState(null);
+  const [damageQty, setDamageQty] = useState(1);
+  const [damageReason, setDamageReason] = useState('Broken / Leaking detected at counter');
+  const [deductFromBill, setDeductFromBill] = useState(true);
+  const [isQuarantining, setIsQuarantining] = useState(false);
+
+  // Quick Damage Toolbar modal (F7)
+  const [isQuickDamageModalOpen, setIsQuickDamageModalOpen] = useState(false);
+  const [quickDamageSearch, setQuickDamageSearch] = useState('');
+  const [quickDamageSuggestions, setQuickDamageSuggestions] = useState([]);
+  const [selectedQuickDamageProduct, setSelectedQuickDamageProduct] = useState(null);
+  const [isSearchingQuickDamage, setIsSearchingQuickDamage] = useState(false);
 
   // Bill-Level Discount state
   const [discountType, setDiscountType] = useState('NONE'); // 'NONE' | 'FIXED' | 'PERCENT'
@@ -100,7 +116,28 @@ export function Billing() {
     api.getSettings().then((res) => setShopSettings(res.data)).catch(() => {});
   }, []);
 
-  // Global Keyboard shortcuts: F2 (Catalog Lookup), F5 (Save Bill), Escape (Close)
+  // Debounce for Quick Damage search (F7)
+  useEffect(() => {
+    const q = quickDamageSearch.trim();
+    if (!q || !isQuickDamageModalOpen) {
+      setQuickDamageSuggestions([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearchingQuickDamage(true);
+      try {
+        const res = await api.getProducts({ search: q, limit: 8 });
+        setQuickDamageSuggestions(res.data || []);
+      } catch (err) {
+        console.error('Quick damage search error:', err);
+      } finally {
+        setIsSearchingQuickDamage(false);
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [quickDamageSearch, isQuickDamageModalOpen]);
+
+  // Global Keyboard shortcuts: F2 (Catalog Lookup), F5 (Save Bill), F7 (Mark Damaged), Escape (Close)
   useEffect(() => {
     const handleGlobalKeyDown = (e) => {
       if (e.key === 'F2') {
@@ -111,10 +148,18 @@ export function Billing() {
         if (cart.length > 0 && !isSubmitting) {
           handleCheckout();
         }
+      } else if (e.key === 'F7') {
+        e.preventDefault();
+        setIsQuickDamageModalOpen(true);
+        setSelectedQuickDamageProduct(null);
+        setDamageQty(1);
+        setDamageReason('Broken / Leaking detected at counter');
       } else if (e.key === 'Escape') {
         setShowDropdown(false);
         setIsCatalogOpen(false);
         setReceiptData(null);
+        setDamagedModalItem(null);
+        setIsQuickDamageModalOpen(false);
         if (searchInputRef.current) searchInputRef.current.focus();
       }
     };
@@ -359,9 +404,13 @@ export function Billing() {
     }
 
     const existingItem = (cartRef.current || []).find((item) => Number(item.id) === id);
-    if (existingItem && existingItem.qty + 1 > currentStock) {
-      setErrorMsg(`Cannot add more of "${name}": Maximum available stock is ${currentStock} ${unit}.`);
-      return;
+    if (existingItem) {
+      const currentPaid = Number(existingItem.qty) || 0;
+      const currentFree = Number(existingItem.freeQty) || 0;
+      if (currentPaid + currentFree + 1 > currentStock) {
+        setErrorMsg(`Cannot add more of "${name}": Total units (${currentPaid + currentFree + 1}) exceed available stock (${currentStock} ${unit}).`);
+        return;
+      }
     }
 
     setCart((prevCart) => {
@@ -370,11 +419,13 @@ export function Billing() {
         // Pure immutable update: create new item object so React never mutates in-place
         return prevCart.map((item, idx) => {
           if (idx !== existingIndex) return item;
-          const nextQty = Math.min(item.qty + 1, currentStock);
+          const currentFree = Number(item.freeQty) || 0;
+          const nextQty = Math.min(item.qty + 1, Math.max(0, currentStock - currentFree));
           const baseAmount = nextQty * item.sellingPrice;
           const taxAmount = (baseAmount * item.gstRate) / 100;
           return {
             ...item,
+            currentStock,
             qty: nextQty,
             baseAmount,
             taxAmount,
@@ -394,7 +445,8 @@ export function Billing() {
           gstRate,
           unit,
           currentStock,
-          qty: 1,
+          qty: 1, // Paid units chosen to bill
+          freeQty: 0, // Separate free samples column (defaults to 0, up to available stock - qty)
           baseAmount,
           taxAmount,
           lineTotal: baseAmount + taxAmount
@@ -496,14 +548,15 @@ export function Billing() {
     setCart((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
-        let qty = Math.max(1, Number(newQty) || 1);
-        if (item.currentStock > 0 && qty > item.currentStock) {
-          qty = item.currentStock;
-          setErrorMsg(`Quantity for "${item.name}" set to maximum available stock limit (${item.currentStock} ${item.unit}).`);
+        let qty = Math.max(0, Number(newQty) || 0);
+        const freeQty = Number(item.freeQty) || 0;
+        if (item.currentStock > 0 && qty + freeQty > item.currentStock) {
+          qty = Math.max(0, item.currentStock - freeQty);
+          setErrorMsg(`Paid quantity for "${item.name}" adjusted to available stock (${item.currentStock} ${item.unit} total, with ${freeQty} free samples).`);
         }
         const itemDisc = Math.min(item.sellingPrice * qty, Number(item.discountAmount) || 0);
-        const baseAmount = item.isFreeSample ? 0 : Math.max(0, (qty * item.sellingPrice) - itemDisc);
-        const taxAmount = item.isFreeSample ? 0 : ((baseAmount * item.gstRate) / 100);
+        const baseAmount = Math.max(0, (qty * item.sellingPrice) - itemDisc);
+        const taxAmount = (baseAmount * item.gstRate) / 100;
         return {
           ...item,
           qty,
@@ -515,19 +568,21 @@ export function Billing() {
     );
   };
 
-  const toggleFreeSample = (id) => {
+  // Separate Column: Dynamic Free Sample quantity (from 0 to available products max left after subtracting current chosen to bill)
+  const updateFreeQuantity = (id, newFreeQty) => {
     setCart((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
-        const nextFree = !item.isFreeSample;
-        const baseAmount = nextFree ? 0 : (item.qty * item.sellingPrice);
-        const taxAmount = nextFree ? 0 : ((baseAmount * item.gstRate) / 100);
+        const paidQty = Number(item.qty) || 0;
+        const maxFreeAllowed = Math.max(0, item.currentStock - paidQty);
+        let freeQty = Math.max(0, Number(newFreeQty) || 0);
+        if (freeQty > maxFreeAllowed) {
+          freeQty = maxFreeAllowed;
+          setErrorMsg(`Free samples for "${item.name}" capped at remaining available stock (${maxFreeAllowed} ${item.unit}).`);
+        }
         return {
           ...item,
-          isFreeSample: nextFree,
-          baseAmount,
-          taxAmount,
-          lineTotal: baseAmount + taxAmount
+          freeQty
         };
       })
     );
@@ -537,12 +592,85 @@ export function Billing() {
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
+  // --------------------------------------------------------------------------
+  // POS Damaged Stock Reporting (Quarantine while Billing)
+  // --------------------------------------------------------------------------
+  const handleReportCartItemDamaged = (item) => {
+    setDamagedModalItem(item);
+    setDamageQty(1);
+    setDamageReason('Broken / Leaking detected at counter');
+    setDeductFromBill(true);
+  };
+
+  const handleConfirmQuarantine = async (e) => {
+    e.preventDefault();
+    const targetProduct = damagedModalItem || selectedQuickDamageProduct;
+    if (!targetProduct) return;
+
+    const qQty = Math.max(1, Number(damageQty) || 1);
+    setIsQuarantining(true);
+    try {
+      const res = await api.quarantineDamagedStock({
+        product_id: targetProduct.id,
+        damaged_quantity: qQty,
+        damage_reason: damageReason,
+        source: 'BILLING_COUNTER'
+      });
+
+      const updatedStock = res.data?.currentStock ?? Math.max(0, Number(targetProduct.currentStock) - qQty);
+
+      // If the product is in current cart, update stock and deduct from bill if requested
+      setCart((prev) =>
+        prev
+          .map((it) => {
+            if (Number(it.id) !== Number(targetProduct.id)) return it;
+            let newPaid = it.qty;
+            if (deductFromBill && damagedModalItem) {
+              newPaid = Math.max(0, it.qty - qQty);
+            }
+            let newFree = it.freeQty || 0;
+            if (newPaid + newFree > updatedStock) {
+              newFree = Math.max(0, updatedStock - newPaid);
+            }
+            const itemDisc = Math.min(it.sellingPrice * newPaid, Number(it.discountAmount) || 0);
+            const baseAmount = Math.max(0, (newPaid * it.sellingPrice) - itemDisc);
+            const taxAmount = (baseAmount * it.gstRate) / 100;
+            return {
+              ...it,
+              currentStock: updatedStock,
+              qty: newPaid,
+              freeQty: newFree,
+              baseAmount,
+              taxAmount,
+              lineTotal: baseAmount + taxAmount
+            };
+          })
+          .filter((it) => (Number(it.qty) > 0 || (Number(it.freeQty) || 0) > 0))
+      );
+
+      setLastScannedMessage({
+        success: true,
+        text: `Quarantined ${qQty} unit(s) of "${targetProduct.name}" into Damaged Stock. Available stock is now ${updatedStock}.`
+      });
+
+      setDamagedModalItem(null);
+      setIsQuickDamageModalOpen(false);
+      setSelectedQuickDamageProduct(null);
+      setQuickDamageSearch('');
+    } catch (err) {
+      setErrorMsg('Failed to quarantine damaged stock: ' + err.message);
+    } finally {
+      setIsQuarantining(false);
+    }
+  };
+
   // 100% PRECISE BILLING MATH (Zero mix-ups between free samples, discounts, taxes, and grand totals)
   // 1. Items Base Subtotal (Sum of Price * Qty for non-sample items minus item discounts)
   const itemsSubtotal = cart.reduce((acc, item) => {
-    if (item.isFreeSample) return acc;
-    const itemDisc = Math.min(item.sellingPrice * item.qty, Number(item.discountAmount) || 0);
-    return acc + Math.max(0, (item.sellingPrice * item.qty) - itemDisc);
+    const paidQty = Number(item.qty) || 0;
+    if (paidQty <= 0) return acc;
+    const itemDisc = Math.min(item.sellingPrice * paidQty, Number(item.discountAmount) || 0);
+    return acc + Math.max(0, (item.sellingPrice * paidQty) - itemDisc);
   }, 0);
   const subtotal = Number(itemsSubtotal.toFixed(2));
 
@@ -559,15 +687,20 @@ export function Billing() {
 
   // 3. GST Tax Amount (Calculated strictly on payable items)
   const taxTotal = Number(cart.reduce((acc, item) => {
-    if (item.isFreeSample) return acc;
-    const itemDisc = Math.min(item.sellingPrice * item.qty, Number(item.discountAmount) || 0);
-    const itemBase = Math.max(0, (item.sellingPrice * item.qty) - itemDisc);
+    const paidQty = Number(item.qty) || 0;
+    if (paidQty <= 0) return acc;
+    const itemDisc = Math.min(item.sellingPrice * paidQty, Number(item.discountAmount) || 0);
+    const itemBase = Math.max(0, (item.sellingPrice * paidQty) - itemDisc);
     return acc + ((itemBase * item.gstRate) / 100);
   }, 0).toFixed(2));
   const totalTax = taxTotal;
 
   // 4. Combined Total Discount (Item discounts + Bill-level discount)
-  const itemDiscountsSum = cart.reduce((acc, item) => acc + (item.isFreeSample ? 0 : Number(item.discountAmount) || 0), 0);
+  const itemDiscountsSum = cart.reduce((acc, item) => {
+    const paidQty = Number(item.qty) || 0;
+    if (paidQty <= 0) return acc;
+    return acc + (Number(item.discountAmount) || 0);
+  }, 0);
   const totalDiscount = Number((itemDiscountsSum + billDiscount).toFixed(2));
 
   // 5. Net Grand Total = Net Subtotal + GST Tax
@@ -622,6 +755,12 @@ export function Billing() {
   const handleCheckout = async () => {
     if (cart.length === 0) return;
 
+    const totalUnits = cart.reduce((acc, it) => acc + (Number(it.qty) || 0) + (Number(it.freeQty) || 0), 0);
+    if (totalUnits <= 0) {
+      setErrorMsg('Please enter at least 1 unit to bill or give as a free sample.');
+      return;
+    }
+
     if (paymentMode === 'CREDIT' && !selectedCustomerId) {
       setErrorMsg('Please select a registered customer for Credit (Udhar) sales!');
       return;
@@ -642,6 +781,36 @@ export function Billing() {
     setErrorMsg('');
 
     try {
+      const saleItems = [];
+      for (const i of cart) {
+        const paidQty = Number(i.qty) || 0;
+        const freeQty = Number(i.freeQty) || 0;
+        if (paidQty > 0) {
+          saleItems.push({
+            id: i.id,
+            qty: paidQty,
+            quantity: paidQty,
+            sellingPrice: i.sellingPrice,
+            unit_price: i.sellingPrice,
+            barcode: i.barcode,
+            is_free_sample: false,
+            discount_amount: Number(i.discountAmount) || 0
+          });
+        }
+        if (freeQty > 0) {
+          saleItems.push({
+            id: i.id,
+            qty: freeQty,
+            quantity: freeQty,
+            sellingPrice: 0,
+            unit_price: 0,
+            barcode: i.barcode,
+            is_free_sample: true,
+            discount_amount: 0
+          });
+        }
+      }
+
       const salePayload = {
         customer_id: selectedCustomerId ? Number(selectedCustomerId) : null,
         customer_name: customerName,
@@ -654,24 +823,41 @@ export function Billing() {
             : grandTotal,
         discount_type: discountType,
         discount_value: numDiscVal,
-        items: cart.map((i) => ({
-          id: i.id,
-          qty: i.qty,
-          sellingPrice: i.isFreeSample ? 0 : i.sellingPrice,
-          barcode: i.barcode,
-          is_free_sample: Boolean(i.isFreeSample),
-          discount_amount: Number(i.discountAmount) || 0
-        }))
+        items: saleItems
       };
 
       const res = await api.createSale(salePayload);
       
       // Open Thermal Receipt Modal
+      const receiptItems = [];
+      for (const it of cart) {
+        if (Number(it.qty) > 0) {
+          receiptItems.push({
+            ...it,
+            name: it.name,
+            qty: Number(it.qty),
+            sellingPrice: it.sellingPrice,
+            lineTotal: it.lineTotal,
+            isFreeSample: false
+          });
+        }
+        if (Number(it.freeQty) > 0) {
+          receiptItems.push({
+            ...it,
+            name: `${it.name} [FREE SAMPLE]`,
+            qty: Number(it.freeQty),
+            sellingPrice: 0,
+            lineTotal: 0,
+            isFreeSample: true
+          });
+        }
+      }
+
       setReceiptData({
         invoiceNo: res.data.invoiceNo,
         date: new Date().toLocaleString(),
         customer: customerName,
-        items: [...cart],
+        items: receiptItems,
         subtotal,
         discountTotal,
         taxTotal,
@@ -830,10 +1016,25 @@ export function Billing() {
           <button
             type="button"
             onClick={openCatalogModal}
-            className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0 bg-blue-50 text-blue-900 border-blue-300 hover:bg-blue-100"
+            className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0 bg-blue-50 text-blue-900 border-blue-300 hover:bg-blue-100 font-semibold"
           >
             <Layers className="w-3.5 h-3.5 text-blue-700" />
             <span>{t('searchCatalogBtn') || 'Find Item (F2)'}</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              setIsQuickDamageModalOpen(true);
+              setSelectedQuickDamageProduct(null);
+              setDamageQty(1);
+              setDamageReason('Broken / Leaking detected at counter');
+            }}
+            className="btn-secondary text-xs py-1.5 px-3 flex items-center gap-1.5 shrink-0 bg-amber-50 text-amber-950 border-amber-300 hover:bg-amber-100 font-bold"
+            title="Mark damaged product at POS counter (F7)"
+          >
+            <ShieldAlert className="w-3.5 h-3.5 text-amber-700" />
+            <span>Mark Damaged (F7)</span>
           </button>
         </div>
 
@@ -956,17 +1157,20 @@ export function Billing() {
                   <th>{t('productName')}</th>
                   <th>{t('barcode')} / {t('sku')}</th>
                   <th className="text-right">{t('price')}</th>
-                  <th className="text-center w-24">{t('qty')}</th>
+                  <th className="text-center w-20">Billed Qty</th>
+                  <th className="text-center w-28 bg-purple-50 text-purple-900 border-x border-purple-200">
+                    Free Sample (இலவசம்)
+                  </th>
                   <th className="text-right">{t('gst')}</th>
                   <th className="text-right">{t('total')}</th>
-                  <th className="text-center w-28">Promo / Sample</th>
+                  <th className="text-center w-20">Damaged?</th>
                   <th className="w-10 text-center">{t('remove')}</th>
                 </tr>
               </thead>
               <tbody>
                 {cart.length === 0 ? (
                   <tr>
-                    <td colSpan="9" className="text-center py-16 text-gray-400">
+                    <td colSpan="10" className="text-center py-16 text-gray-400">
                       <ScanBarcode className="w-10 h-10 text-gray-300 mx-auto mb-2 animate-bounce" />
                       <div className="font-bold text-gray-600">{t('cartEmpty')}</div>
                       <div className="text-[11px] mt-1 text-gray-500 max-w-md mx-auto">
@@ -985,93 +1189,114 @@ export function Billing() {
                     </td>
                   </tr>
                 ) : (
-                  cart.map((item, idx) => (
-                    <tr key={item.id} className={item.isFreeSample ? 'bg-purple-50/50' : ''}>
-                      <td className="text-center font-mono text-gray-500">{idx + 1}</td>
-                      <td>
-                        <div className="flex items-center gap-1.5">
-                          <span className="font-bold text-gray-900">{item.name}</span>
-                          {item.isFreeSample && (
-                            <span className="bg-purple-600 text-white text-[9px] font-bold px-1.5 py-0.2 rounded font-mono">
-                              FREE SAMPLE
-                            </span>
-                          )}
-                        </div>
-                        {item.tamilName && <div className="text-gray-600 text-[11px]">{item.tamilName}</div>}
-                      </td>
-                      <td className="font-mono text-indigo-700">{item.barcode || item.sku}</td>
-                      <td className="num-cell">
-                        {item.isFreeSample ? (
-                          <div className="flex flex-col items-end">
-                            <span className="line-through text-gray-400 text-[10px]">₹{item.sellingPrice.toFixed(2)}</span>
-                            <span className="text-purple-700 font-bold font-mono">₹0.00</span>
-                          </div>
-                        ) : (
-                          <span>₹{item.sellingPrice.toFixed(2)}</span>
-                        )}
-                      </td>
-                      <td className="text-center">
-                        <input
-                          type="number"
-                          min="1"
-                          max={item.currentStock > 0 ? item.currentStock : undefined}
-                          value={item.qty}
-                          onChange={(e) => updateQuantity(item.id, e.target.value)}
-                          className="form-input w-16 text-center font-bold font-mono py-0.5 text-xs"
-                        />
-                        {item.currentStock > 0 && (
-                          <div className="text-[9px] text-gray-500 font-mono mt-0.5">
-                            max {item.currentStock}
-                          </div>
-                        )}
-                      </td>
-                      <td className="num-cell text-gray-700">
-                        {item.isFreeSample ? (
-                          <span className="text-gray-400 font-mono">0% (₹0)</span>
-                        ) : (
-                          <>
-                            <div className="font-semibold">{item.gstRate}%</div>
-                            {item.gstRate > 0 && (
-                              <div className="text-[10px] text-gray-500 font-mono">
-                                +₹{((item.sellingPrice * item.qty * item.gstRate) / 100).toFixed(2)}
-                              </div>
+                  cart.map((item, idx) => {
+                    const paidQty = Number(item.qty) || 0;
+                    const freeQty = Number(item.freeQty) || 0;
+                    const maxFreeAllowed = Math.max(0, Number(item.currentStock) - paidQty);
+                    const maxPaidAllowed = Math.max(0, Number(item.currentStock) - freeQty);
+
+                    return (
+                      <tr key={item.id} className={freeQty > 0 ? 'bg-purple-50/30' : ''}>
+                        <td className="text-center font-mono text-gray-500">{idx + 1}</td>
+                        <td>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-bold text-gray-900">{item.name}</span>
+                            {freeQty > 0 && (
+                              <span className="bg-purple-600 text-white text-[9px] font-bold px-1.5 py-0.2 rounded font-mono">
+                                +{freeQty} FREE SAMPLE
+                              </span>
                             )}
-                          </>
-                        )}
-                      </td>
-                      <td className="num-cell font-bold text-blue-900">
-                        {item.isFreeSample ? (
-                          <span className="text-purple-700 font-mono font-bold">₹0.00</span>
-                        ) : (
-                          <span>₹{item.lineTotal.toFixed(2)}</span>
-                        )}
-                      </td>
-                      <td className="text-center">
-                        <button
-                          type="button"
-                          onClick={() => toggleFreeSample(item.id)}
-                          className={`text-[10px] font-bold px-2 py-1 rounded border flex items-center justify-center gap-1 mx-auto transition ${
-                            item.isFreeSample
-                              ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
-                              : 'bg-white hover:bg-purple-50 text-purple-900 border-purple-300'
-                          }`}
-                          title={item.isFreeSample ? 'Remove Free Sample status' : 'Mark as Free Sample (Customer gets item at ₹0.00)'}
-                        >
-                          <Gift className="w-3 h-3 text-purple-400" />
-                          <span>{item.isFreeSample ? 'Free' : 'Sample'}</span>
-                        </button>
-                      </td>
-                      <td className="text-center">
-                        <button
-                          onClick={() => removeItem(item.id)}
-                          className="text-red-500 hover:text-red-700 p-1"
-                          title="Remove item"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+                          </div>
+                          {item.tamilName && <div className="text-gray-600 text-[11px]">{item.tamilName}</div>}
+                        </td>
+                        <td className="font-mono text-indigo-700">{item.barcode || item.sku}</td>
+                        <td className="num-cell">
+                          <span>₹{item.sellingPrice.toFixed(2)}</span>
+                        </td>
+
+                        {/* Billed Paid Quantity Column */}
+                        <td className="text-center">
+                          <input
+                            type="number"
+                            min="0"
+                            max={maxPaidAllowed}
+                            value={paidQty}
+                            onChange={(e) => updateQuantity(item.id, e.target.value)}
+                            className="form-input w-16 text-center font-bold font-mono py-0.5 text-xs"
+                          />
+                          <div className="text-[9px] text-gray-500 font-mono mt-0.5">
+                            max {maxPaidAllowed}
+                          </div>
+                        </td>
+
+                        {/* Free Sample Separate Column: from 0 up to remaining available stock (currentStock - billedQty) */}
+                        <td className="text-center bg-purple-50/50 border-x border-purple-200">
+                          <div className="flex flex-col items-center">
+                            <input
+                              type="number"
+                              min="0"
+                              max={maxFreeAllowed}
+                              value={freeQty}
+                              onChange={(e) => updateFreeQuantity(item.id, e.target.value)}
+                              className={`form-input w-16 text-center font-bold font-mono py-0.5 text-xs ${
+                                freeQty > 0
+                                  ? 'bg-purple-100 text-purple-950 border-purple-400 focus:ring-purple-500'
+                                  : 'text-gray-700'
+                              }`}
+                            />
+                            <span className="text-[9px] text-purple-700 font-mono mt-0.5 font-semibold">
+                              max left: {maxFreeAllowed}
+                            </span>
+                          </div>
+                        </td>
+
+                        {/* GST */}
+                        <td className="num-cell text-gray-700">
+                          {paidQty <= 0 ? (
+                            <span className="text-gray-400 font-mono">0% (₹0)</span>
+                          ) : (
+                            <>
+                              <div className="font-semibold">{item.gstRate}%</div>
+                              {item.gstRate > 0 && (
+                                <div className="text-[10px] text-gray-500 font-mono">
+                                  +₹{((item.sellingPrice * paidQty * item.gstRate) / 100).toFixed(2)}
+                                </div>
+                              )}
+                            </>
+                          )}
+                        </td>
+
+                        {/* Total */}
+                        <td className="num-cell font-bold text-blue-900">
+                          <span>₹{(paidQty <= 0 ? 0 : item.lineTotal).toFixed(2)}</span>
+                        </td>
+
+                        {/* Report Damaged Button */}
+                        <td className="text-center">
+                          <button
+                            type="button"
+                            onClick={() => handleReportCartItemDamaged(item)}
+                            className="text-[10px] font-bold px-1.5 py-1 rounded border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 flex items-center justify-center gap-1 mx-auto transition"
+                            title="Found a damaged/defective unit of this product at billing? Quarantine it immediately"
+                          >
+                            <AlertTriangle className="w-3 h-3 text-amber-600" />
+                            <span>Damage</span>
+                          </button>
+                        </td>
+
+                        {/* Remove Button */}
+                        <td className="text-center">
+                          <button
+                            onClick={() => removeItem(item.id)}
+                            className="text-red-500 hover:text-red-700 p-1"
+                            title="Remove item"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>
@@ -1081,7 +1306,15 @@ export function Billing() {
           <div className="bg-gray-50 p-2.5 border-t border-gray-300 flex items-center justify-between text-xs">
             <span className="font-semibold text-gray-600">
               {t('itemsCount')}: <b className="text-gray-900">{cart.length}</b> | {t('totalUnits')}:{' '}
-              <b className="text-gray-900">{cart.reduce((a, b) => a + b.qty, 0)}</b>
+              <b className="text-gray-900">
+                {cart.reduce((a, b) => a + (Number(b.qty) || 0) + (Number(b.freeQty) || 0), 0)} PCS
+              </b>
+              {cart.some((it) => (Number(it.freeQty) || 0) > 0) && (
+                <span className="ml-2 text-purple-700 font-bold font-mono">
+                  (Paid: {cart.reduce((a, b) => a + (Number(b.qty) || 0), 0)}, Free Samples:{' '}
+                  {cart.reduce((a, b) => a + (Number(b.freeQty) || 0), 0)})
+                </span>
+              )}
             </span>
             <button
               onClick={() => setCart([])}
@@ -1629,6 +1862,287 @@ export function Billing() {
                 <Printer className="w-4 h-4" />
                 <span>Print Thermal Bill</span>
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 1: Report Damaged Product on Cart Item */}
+      {damagedModalItem && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-2xl border border-gray-400 overflow-hidden max-w-md w-full animate-fade-in flex flex-col">
+            <div className="bg-amber-800 text-white p-3 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-200" />
+                <span className="font-bold text-xs uppercase tracking-wider">
+                  Report Damaged Product (POS Quarantine / சேதமடைந்த சரக்கு)
+                </span>
+              </div>
+              <button
+                onClick={() => setDamagedModalItem(null)}
+                className="text-amber-200 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleConfirmQuarantine} className="p-4 space-y-3 text-xs">
+              <div className="bg-amber-50 p-2.5 rounded border border-amber-200">
+                <div className="font-bold text-gray-900 text-sm">{damagedModalItem.name}</div>
+                {damagedModalItem.tamilName && (
+                  <div className="text-gray-600 text-xs">{damagedModalItem.tamilName}</div>
+                )}
+                <div className="flex items-center justify-between text-[11px] mt-1 text-gray-600">
+                  <span>Barcode: {damagedModalItem.barcode || damagedModalItem.sku}</span>
+                  <span className="font-bold text-emerald-800 font-mono">
+                    Store Stock: {damagedModalItem.currentStock} {damagedModalItem.unit}
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">
+                  Damaged Quantity to Quarantine (சேதமடைந்த எண்ணிக்கை)
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max={damagedModalItem.currentStock}
+                  value={damageQty}
+                  onChange={(e) => setDamageQty(Math.max(1, Number(e.target.value) || 1))}
+                  className="form-input w-full font-bold font-mono text-sm"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block font-bold text-gray-700 mb-1">
+                  Damage Reason (சேதத்திற்கான காரணம்)
+                </label>
+                <input
+                  type="text"
+                  value={damageReason}
+                  onChange={(e) => setDamageReason(e.target.value)}
+                  className="form-input w-full mb-1.5"
+                  required
+                />
+                <div className="flex flex-wrap gap-1">
+                  {['Broken / Leaking', 'Dented / Crushed', 'Packaging Torn', 'Seal Tampered', 'Expired / Spoiled'].map(
+                    (preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setDamageReason(preset)}
+                        className={`text-[10px] px-2 py-0.5 rounded border transition ${
+                          damageReason === preset
+                            ? 'bg-amber-700 text-white border-amber-800 font-bold'
+                            : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-gray-300'
+                        }`}
+                      >
+                        {preset}
+                      </button>
+                    )
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-1">
+                <label className="inline-flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={deductFromBill}
+                    onChange={(e) => setDeductFromBill(e.target.checked)}
+                    className="rounded text-amber-600 focus:ring-amber-500"
+                  />
+                  <span className="font-semibold text-gray-800 text-xs">
+                    Remove / deduct damaged unit from current customer's bill
+                  </span>
+                </label>
+              </div>
+
+              <div className="bg-gray-50 -mx-4 -mb-4 p-3 border-t border-gray-200 flex justify-end gap-2 mt-4">
+                <button
+                  type="button"
+                  onClick={() => setDamagedModalItem(null)}
+                  className="btn-secondary text-xs py-1.5 px-3"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isQuarantining}
+                  className="btn-primary text-xs py-1.5 px-4 font-bold bg-amber-700 hover:bg-amber-800 disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <ShieldAlert className="w-3.5 h-3.5" />
+                  <span>{isQuarantining ? 'Quarantining...' : 'Quarantine Damaged Stock'}</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal 2: Quick Mark Damaged (F7) Search & Quarantine */}
+      {isQuickDamageModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-2xl border border-gray-400 overflow-hidden max-w-lg w-full animate-fade-in flex flex-col max-h-[85vh]">
+            <div className="bg-amber-900 text-white p-3 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <ShieldAlert className="w-4 h-4 text-amber-200" />
+                <span className="font-bold text-xs uppercase tracking-wider">
+                  Quick Mark Damaged Product (POS Counter F7)
+                </span>
+              </div>
+              <button
+                onClick={() => setIsQuickDamageModalOpen(false)}
+                className="text-amber-200 hover:text-white"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-4 space-y-3 text-xs flex-1 flex flex-col overflow-hidden">
+              {!selectedQuickDamageProduct ? (
+                <>
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Scan Barcode or Search Product to Quarantine:
+                    </label>
+                    <div className="relative">
+                      <Search className="w-4 h-4 absolute left-2.5 top-2.5 text-gray-400" />
+                      <input
+                        type="text"
+                        placeholder="Scan barcode or type product name..."
+                        value={quickDamageSearch}
+                        onChange={(e) => setQuickDamageSearch(e.target.value)}
+                        className="form-input pl-9 w-full font-medium"
+                        autoFocus
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto border border-gray-200 rounded divide-y divide-gray-100 max-h-60">
+                    {isSearchingQuickDamage ? (
+                      <div className="p-4 text-center text-gray-400">Searching products...</div>
+                    ) : quickDamageSuggestions.length === 0 ? (
+                      <div className="p-4 text-center text-gray-400">
+                        {quickDamageSearch ? 'No matching products found.' : 'Scan or type to find product.'}
+                      </div>
+                    ) : (
+                      quickDamageSuggestions.map((p) => (
+                        <div
+                          key={p.id}
+                          onClick={() => {
+                            setSelectedQuickDamageProduct(p);
+                            setDamageQty(1);
+                            setDamageReason('Broken / Leaking detected at counter');
+                          }}
+                          className="p-2.5 hover:bg-amber-50 cursor-pointer flex items-center justify-between"
+                        >
+                          <div>
+                            <div className="font-bold text-gray-900">{p.name}</div>
+                            <div className="text-[10px] text-gray-500 font-mono">
+                              SKU: {p.sku} | Barcode: {p.barcodes || '-'}
+                            </div>
+                          </div>
+                          <div className="text-right">
+                            <span className="font-mono font-bold text-amber-800">
+                              Stock: {p.current_stock}
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </>
+              ) : (
+                <form onSubmit={handleConfirmQuarantine} className="space-y-3">
+                  <div className="bg-amber-50 p-2.5 rounded border border-amber-200 flex justify-between items-center">
+                    <div>
+                      <div className="font-bold text-gray-900 text-sm">
+                        {selectedQuickDamageProduct.name}
+                      </div>
+                      <div className="text-[11px] text-gray-600 font-mono">
+                        SKU: {selectedQuickDamageProduct.sku}
+                      </div>
+                      <div className="text-[11px] text-emerald-800 font-bold font-mono mt-0.5">
+                        Current Store Stock: {selectedQuickDamageProduct.current_stock}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedQuickDamageProduct(null)}
+                      className="text-xs text-blue-700 underline font-semibold"
+                    >
+                      Change Product
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Damaged Quantity to Quarantine:
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      max={selectedQuickDamageProduct.current_stock}
+                      value={damageQty}
+                      onChange={(e) => setDamageQty(Math.max(1, Number(e.target.value) || 1))}
+                      className="form-input w-full font-bold font-mono text-sm"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block font-bold text-gray-700 mb-1">
+                      Damage Reason / Note:
+                    </label>
+                    <input
+                      type="text"
+                      value={damageReason}
+                      onChange={(e) => setDamageReason(e.target.value)}
+                      className="form-input w-full mb-1.5"
+                      required
+                    />
+                    <div className="flex flex-wrap gap-1">
+                      {['Broken / Leaking', 'Dented / Crushed', 'Packaging Torn', 'Seal Tampered', 'Expired / Spoiled'].map(
+                        (preset) => (
+                          <button
+                            key={preset}
+                            type="button"
+                            onClick={() => setDamageReason(preset)}
+                            className={`text-[10px] px-2 py-0.5 rounded border transition ${
+                              damageReason === preset
+                                ? 'bg-amber-700 text-white border-amber-800 font-bold'
+                                : 'bg-gray-100 text-gray-700 hover:bg-gray-200 border-gray-300'
+                            }`}
+                          >
+                            {preset}
+                          </button>
+                        )
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex justify-end gap-2 border-t border-gray-200">
+                    <button
+                      type="button"
+                      onClick={() => setIsQuickDamageModalOpen(false)}
+                      className="btn-secondary text-xs py-1.5 px-3"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isQuarantining}
+                      className="btn-primary text-xs py-1.5 px-4 font-bold bg-amber-700 hover:bg-amber-800 disabled:opacity-50 flex items-center gap-1.5"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5" />
+                      <span>{isQuarantining ? 'Quarantining...' : 'Quarantine Damaged Stock'}</span>
+                    </button>
+                  </div>
+                </form>
+              )}
             </div>
           </div>
         </div>
