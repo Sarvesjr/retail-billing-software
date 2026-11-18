@@ -37,18 +37,71 @@ export function dispatchScanEvent(scanData) {
 export function BarcodeListener({ children }) {
   const bufferRef = useRef('');
   const lastKeyTimeRef = useRef(0);
+  const auxBufferRef = useRef('');
+  const lastAuxKeyTimeRef = useRef(0);
+  const auxRapidCountRef = useRef(0);
   const eventSourceRef = useRef(null);
   const wsRef = useRef(null);
 
   useEffect(() => {
     // 1. Hardware USB Scanner Keyboard Listener (HID)
     const handleKeyDown = async (e) => {
-      // If user is actively typing in a form input, textarea, or contentEditable, do NOT hijack!
-      if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable)) {
+      const isInput = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.isContentEditable);
+      
+      // If actively focused in the main omni-search input, let its dedicated handler manage it
+      if (isInput && e.target.getAttribute('data-omni-search') === 'true') {
         return;
       }
 
       const now = Date.now();
+
+      // If focused in an auxiliary input (e.g. cart table quantity, free sample, discount, customer fields):
+      if (isInput) {
+        const auxDiff = now - lastAuxKeyTimeRef.current;
+        lastAuxKeyTimeRef.current = now;
+
+        if (auxDiff < 60) {
+          auxRapidCountRef.current += 1;
+        } else {
+          auxRapidCountRef.current = 1;
+          auxBufferRef.current = '';
+        }
+
+        // Hardware scanner burst detected on auxiliary input!
+        if (auxRapidCountRef.current >= 3) {
+          e.preventDefault();
+          e.stopPropagation();
+
+          if (e.key === 'Enter') {
+            const barcode = auxBufferRef.current.trim();
+            auxBufferRef.current = '';
+            auxRapidCountRef.current = 0;
+            if (barcode.length >= 3) {
+              try {
+                const result = await api.lookupBarcode(barcode, 'HARDWARE_USB');
+                result.scanId = `hid-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+                dispatchScanEvent(result);
+              } catch (err) {
+                console.error('[Hardware Scanner Error]', err);
+              }
+            }
+            return;
+          }
+
+          if (e.key.length === 1) {
+            auxBufferRef.current += e.key;
+          }
+          return;
+        }
+
+        // Single human key stroke in input: allow normal typing
+        if (e.key.length === 1) {
+          auxBufferRef.current += e.key;
+        }
+        return;
+      }
+
+      // Scanner when no input is focused:
       const timeDiff = now - lastKeyTimeRef.current;
       lastKeyTimeRef.current = now;
 

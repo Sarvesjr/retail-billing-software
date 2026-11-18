@@ -101,6 +101,7 @@ export function Billing() {
   const lastKeyTimeRef = useRef(0);
   const rapidKeyCountRef = useRef(0);
   const rapidScanTimerRef = useRef(null);
+  const isNavigatingWithArrowsRef = useRef(false);
   const cartRef = useRef(cart);
 
   useEffect(() => {
@@ -480,11 +481,13 @@ export function Billing() {
 
     if (e.key === 'ArrowDown') {
       e.preventDefault();
+      isNavigatingWithArrowsRef.current = true;
       if (suggestions.length > 0) {
         setSelectedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : 0));
       }
     } else if (e.key === 'ArrowUp') {
       e.preventDefault();
+      isNavigatingWithArrowsRef.current = true;
       if (suggestions.length > 0) {
         setSelectedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1));
       }
@@ -502,17 +505,28 @@ export function Billing() {
       setSearchInput('');
       e.target.value = '';
 
-      // 1. If user navigated suggestions with arrows and explicitly chose one
-      if (selectedIndex >= 0 && suggestions[selectedIndex] && suggestions[selectedIndex].name) {
+      // 1. If user EXPLICITLY navigated suggestions with arrow keys and did NOT type a numeric barcode
+      const isBarcodeShape = /^\d{4,}$/.test(query);
+      if (
+        isNavigatingWithArrowsRef.current &&
+        !isBarcodeShape &&
+        selectedIndex >= 0 &&
+        suggestions[selectedIndex] &&
+        suggestions[selectedIndex].name
+      ) {
+        isNavigatingWithArrowsRef.current = false;
         addProductToCart(suggestions[selectedIndex]);
         return;
       }
+      isNavigatingWithArrowsRef.current = false;
 
-      // 2. Direct barcode lookup in MySQL
+      // 2. Direct barcode lookup in MySQL (always priority for scanned or typed codes)
       handleDirectBarcodeScan(query, 'HARDWARE_USB');
     } else if (e.key === 'Escape') {
+      isNavigatingWithArrowsRef.current = false;
       setShowDropdown(false);
     } else {
+      isNavigatingWithArrowsRef.current = false;
       // For hardware scanners that DO NOT send an Enter key suffix:
       // Only fire after rapid scanner burst completes (120ms pause after 5+ rapid chars)
       if (rapidScanTimerRef.current) clearTimeout(rapidScanTimerRef.current);
@@ -545,6 +559,14 @@ export function Billing() {
   };
 
   const updateQuantity = (id, newQty) => {
+    const rawStr = String(newQty ?? '').trim();
+    // Safety Intercept: If a hardware barcode scanner was fired while focus was in the quantity input
+    if (rawStr.length >= 5 && /^\d+$/.test(rawStr)) {
+      handleDirectBarcodeScan(rawStr, 'HARDWARE_USB');
+      if (searchInputRef.current) searchInputRef.current.focus();
+      return;
+    }
+
     setCart((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -570,6 +592,15 @@ export function Billing() {
 
   // Separate Column: Dynamic Free Sample quantity (from 0 to available products max left after subtracting current chosen to bill)
   const updateFreeQuantity = (id, newFreeQty) => {
+    const rawStr = String(newFreeQty ?? '').trim();
+    // Safety Intercept: If a hardware barcode scanner was fired while focus was in the free sample input,
+    // do NOT corrupt the free sample quantity of the previous product! Scan it as the intended product instead.
+    if (rawStr.length >= 5 && /^\d+$/.test(rawStr)) {
+      handleDirectBarcodeScan(rawStr, 'HARDWARE_USB');
+      if (searchInputRef.current) searchInputRef.current.focus();
+      return;
+    }
+
     setCart((prev) =>
       prev.map((item) => {
         if (item.id !== id) return item;
@@ -918,6 +949,7 @@ export function Billing() {
               <Search className="w-4 h-4 absolute left-2.5 text-blue-600 pointer-events-none" />
               <input
                 ref={searchInputRef}
+                data-omni-search="true"
                 type="text"
                 placeholder={t('billingSearchPlaceholder') || 'Scan barcode, type product name or SKU code (F2)...'}
                 value={searchInput}
@@ -1228,6 +1260,17 @@ export function Billing() {
                             min="0"
                             max={maxPaidAllowed}
                             value={paidQty}
+                            onFocus={(e) => e.target.select()}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                e.preventDefault();
+                                const val = String(e.target.value || '').trim();
+                                if (val.length >= 5 && /^\d+$/.test(val)) {
+                                  handleDirectBarcodeScan(val, 'HARDWARE_USB');
+                                }
+                                if (searchInputRef.current) searchInputRef.current.focus();
+                              }
+                            }}
                             onChange={(e) => updateQuantity(item.id, e.target.value)}
                             className="form-input w-16 text-center font-bold font-mono py-0.5 text-xs"
                           />
@@ -1244,6 +1287,17 @@ export function Billing() {
                               min="0"
                               max={maxFreeAllowed}
                               value={freeQty}
+                              onFocus={(e) => e.target.select()}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  e.preventDefault();
+                                  const val = String(e.target.value || '').trim();
+                                  if (val.length >= 5 && /^\d+$/.test(val)) {
+                                    handleDirectBarcodeScan(val, 'HARDWARE_USB');
+                                  }
+                                  if (searchInputRef.current) searchInputRef.current.focus();
+                                }
+                              }}
                               onChange={(e) => updateFreeQuantity(item.id, e.target.value)}
                               className={`form-input w-16 text-center font-bold font-mono py-0.5 text-xs ${
                                 freeQty > 0
