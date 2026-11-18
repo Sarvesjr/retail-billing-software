@@ -107,5 +107,23 @@ export const api = {
   getUser: (id) => fetchApi(`/users/${id}`),
   createUser: (data) => fetchApi('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id, data) => fetchApi(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  deleteUser: (id) => fetchApi(`/users/${id}`, { method: 'DELETE' })
+  deleteUser: (id) => fetchApi(`/users/${id}`, { method: 'DELETE' }),
+
+  // Returns & Damaged/Expired Stock
+  getSalesReturns: () => fetchApi('/returns/sales'),
+  createSalesReturn: (data) => fetchApi('/returns/sales', { method: 'POST', body: JSON.stringify(data) }),
+  getPurchaseReturns: () => fetchApi('/returns/purchases'),
+  createPurchaseReturn: (data) => fetchApi('/returns/purchases', { method: 'POST', body: JSON.stringify(data) }),
+  getDamagedAndExpiredStock: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return fetchApi(`/returns/damaged-expired${query ? '?' + query : ''}`);
+  },
+
+  // Customer Feedback
+  getFeedbacks: (params = {}) => {
+    const query = new URLSearchParams(params).toString();
+    return fetchApi(`/feedbacks${query ? '?' + query : ''}`);
+  },
+  createFeedback: (data) => fetchApi('/feedbacks', { method: 'POST', body: JSON.stringify(data) }),
+  getFeedbackStats: () => fetchApi('/feedbacks/stats')
 };

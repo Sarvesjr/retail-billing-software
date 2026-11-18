@@ -37,12 +37,14 @@ export function generateLosslessReceiptSvg(sale, shopSettings = {}) {
   items.forEach((it, idx) => {
     const rawName = it.product_name || it.productName || it.name || 'Item';
     const name = escapeXml(rawName);
+    const isFree = Boolean(it.is_free_sample || it.isFreeSample);
+    const sampleTag = isFree ? ' [FREE]' : '';
     const rawTamil = it.tamil_name || it.tamilName || it.product_tamil_name || '';
     const tamil = rawTamil ? escapeXml(rawTamil) : '';
-    const displayName = tamil ? `${name.slice(0, 18)} (${tamil.slice(0, 12)})` : name.slice(0, 25);
+    const displayName = tamil ? `${name.slice(0, 16)}${sampleTag} (${tamil.slice(0, 10)})` : `${name.slice(0, 22)}${sampleTag}`;
     const qty = Number(it.quantity !== undefined ? it.quantity : (it.qty !== undefined ? it.qty : 1));
-    const unitPrice = Number(it.unit_price !== undefined ? it.unit_price : (it.unitPrice !== undefined ? it.unitPrice : (it.selling_price !== undefined ? it.selling_price : (it.sellingPrice || 0)))).toFixed(2);
-    const lineTotal = Number(it.line_total !== undefined ? it.line_total : (it.lineTotal !== undefined ? it.lineTotal : (qty * Number(unitPrice)))).toFixed(2);
+    const unitPrice = isFree ? '0.00' : Number(it.unit_price !== undefined ? it.unit_price : (it.unitPrice !== undefined ? it.unitPrice : (it.selling_price !== undefined ? it.selling_price : (it.sellingPrice || 0)))).toFixed(2);
+    const lineTotal = isFree ? '0.00' : Number(it.line_total !== undefined ? it.line_total : (it.lineTotal !== undefined ? it.lineTotal : (qty * Number(unitPrice)))).toFixed(2);
 
     itemsSvg += `
       <g transform="translate(0, ${currentY})">
@@ -56,6 +58,7 @@ export function generateLosslessReceiptSvg(sale, shopSettings = {}) {
   });
 
   const subtotal = Number(sale.subtotal || 0).toFixed(2);
+  const discountTotal = Number(sale.discount_total || sale.discountTotal || 0).toFixed(2);
   const taxTotal = Number(sale.tax_total || sale.taxTotal || 0).toFixed(2);
   const grandTotal = Number(sale.grand_total || sale.grandTotal || 0).toFixed(2);
   const paymentMode = sale.payment_mode || sale.paymentMode || 'CASH';
@@ -63,8 +66,9 @@ export function generateLosslessReceiptSvg(sale, shopSettings = {}) {
   const invoiceNo = escapeXml(sale.invoice_no || sale.invoiceNo || 'INV-0000');
   const customerName = escapeXml(sale.customer_name || sale.customer || 'Walk-in Customer');
 
+  const hasDiscount = Number(discountTotal) > 0;
   const totalsY = currentY + 15;
-  const barcodeY = totalsY + 115;
+  const barcodeY = totalsY + (hasDiscount ? 130 : 115);
   const footerY = barcodeY + 45;
 
   return `<?xml version="1.0" encoding="UTF-8"?>
@@ -116,12 +120,17 @@ export function generateLosslessReceiptSvg(sale, shopSettings = {}) {
   <text x="15" y="${totalsY + 20}" class="mono" font-size="11" fill="#374151">Subtotal:</text>
   <text x="365" y="${totalsY + 20}" class="mono right" font-size="11" fill="#111827">₹${subtotal}</text>
 
-  <text x="15" y="${totalsY + 38}" class="mono" font-size="10" fill="#6b7280">GST Tax:</text>
-  <text x="365" y="${totalsY + 38}" class="mono right" font-size="10" fill="#4b5563">+₹${taxTotal}</text>
+  ${hasDiscount ? `
+  <text x="15" y="${totalsY + 36}" class="mono" font-size="10" fill="#dc2626">Discount:</text>
+  <text x="365" y="${totalsY + 36}" class="mono right" font-size="10" fill="#dc2626">-₹${discountTotal}</text>
+  ` : ''}
 
-  <rect x="15" y="${totalsY + 50}" width="350" height="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" rx="2" />
-  <text x="25" y="${totalsY + 70}" class="mono heavy" font-size="13" fill="#0f172a">NET TOTAL:</text>
-  <text x="355" y="${totalsY + 70}" class="mono heavy right" font-size="15" fill="#1e3a8a">₹${grandTotal}</text>
+  <text x="15" y="${totalsY + (hasDiscount ? 52 : 38)}" class="mono" font-size="10" fill="#6b7280">GST Tax:</text>
+  <text x="365" y="${totalsY + (hasDiscount ? 52 : 38)}" class="mono right" font-size="10" fill="#4b5563">+₹${taxTotal}</text>
+
+  <rect x="15" y="${totalsY + (hasDiscount ? 66 : 50)}" width="350" height="30" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="1" rx="2" />
+  <text x="25" y="${totalsY + (hasDiscount ? 86 : 70)}" class="mono heavy" font-size="13" fill="#0f172a">NET TOTAL:</text>
+  <text x="355" y="${totalsY + (hasDiscount ? 86 : 70)}" class="mono heavy right" font-size="15" fill="#1e3a8a">₹${grandTotal}</text>
 
   <!-- Simulated Barcode of Invoice Number -->
   <g transform="translate(70, ${barcodeY})">

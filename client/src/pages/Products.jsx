@@ -17,6 +17,8 @@ import {
   RotateCcw,
   Sparkles,
   FolderPlus,
+  Calendar,
+  Truck,
   X
 } from 'lucide-react';
 
@@ -25,6 +27,7 @@ export function Products() {
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [units, setUnits] = useState([]);
+  const [suppliers, setSuppliers] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -61,6 +64,12 @@ export function Products() {
     purchase_price: '',
     selling_price: '',
     mrp: '',
+    expiry_date: '',
+    supplier_id: '',
+    damaged_stock: '0',
+    is_damaged: false,
+    damaged_quantity: '0',
+    damage_reason: '',
     min_stock_level: 5,
     barcode: '',
     opening_stock: '10',
@@ -116,6 +125,12 @@ export function Products() {
         ? String(p.currentStock)
         : ((p.opening_stock !== undefined && p.opening_stock !== null && p.opening_stock !== '') ? String(p.opening_stock) : '0'));
 
+    const expiryDate = p.expiry_date ? String(p.expiry_date).slice(0, 10) : '';
+    const supplierId = p.supplier_id ? String(p.supplier_id) : '';
+    const damagedStock = p.damaged_stock !== undefined ? String(p.damaged_stock) : '0';
+    const isDamaged = Boolean(p.is_damaged || Number(damagedStock) > 0);
+    const damageReason = p.damage_reason || '';
+
     return {
       sku: p.sku || '',
       name: p.name || p.product_name || p.productName || '',
@@ -127,6 +142,12 @@ export function Products() {
       purchase_price: purchasePrice,
       selling_price: sellingPrice,
       mrp: mrp,
+      expiry_date: expiryDate,
+      supplier_id: supplierId,
+      damaged_stock: damagedStock,
+      is_damaged: isDamaged,
+      damaged_quantity: damagedStock,
+      damage_reason: damageReason,
       min_stock_level: Number(p.min_stock_level ?? p.minStockLevel ?? 5),
       barcode: barcodeVal,
       opening_stock: stock,
@@ -146,6 +167,12 @@ export function Products() {
     purchase_price: '',
     selling_price: '',
     mrp: '',
+    expiry_date: '',
+    supplier_id: '',
+    damaged_stock: '0',
+    is_damaged: false,
+    damaged_quantity: '0',
+    damage_reason: '',
     min_stock_level: 5,
     barcode: '',
     opening_stock: '10',
@@ -156,14 +183,16 @@ export function Products() {
     setLoading(true);
     setErrorMsg('');
     try {
-      const [prodRes, catRes, unitRes] = await Promise.all([
+      const [prodRes, catRes, unitRes, supRes] = await Promise.all([
         api.getProducts({ search }),
         api.getCategories(),
-        api.getUnits()
+        api.getUnits(),
+        api.getSuppliers()
       ]);
       setProducts(prodRes.data || []);
       setCategories(catRes.data || []);
       setUnits(unitRes.data || []);
+      setSuppliers(supRes.data || []);
     } catch (err) {
       setErrorMsg('Failed to fetch product records from MySQL: ' + err.message);
     } finally {
@@ -407,6 +436,12 @@ export function Products() {
         purchase_price: Number(formData.purchase_price) || 0,
         selling_price: Number(formData.selling_price) || 0,
         mrp: Number(formData.mrp) || 0,
+        expiry_date: formData.expiry_date ? String(formData.expiry_date).slice(0, 10) : null,
+        supplier_id: formData.supplier_id ? Number(formData.supplier_id) : null,
+        damaged_stock: Number(formData.damaged_quantity) || 0,
+        is_damaged: Boolean(formData.is_damaged || Number(formData.damaged_quantity) > 0),
+        damaged_quantity: Number(formData.damaged_quantity) || 0,
+        damage_reason: formData.damage_reason ? formData.damage_reason.trim() : null,
         min_stock_level: Number(formData.min_stock_level) || 0,
         barcodes: formData.barcode ? [formData.barcode.trim()] : [],
         opening_stock: Number(formData.opening_stock) || 0,
@@ -936,6 +971,108 @@ export function Products() {
                     onChange={(e) => setFormData({ ...formData, opening_stock: e.target.value })}
                     className="form-input w-full text-right font-mono text-xs border-blue-400 bg-blue-50/50 font-bold"
                   />
+                </div>
+              </div>
+
+              {/* Expiry Date, Supplier & Damaged Stock Precision Tracking */}
+              <div className="bg-amber-50/80 border border-amber-300 rounded p-3 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-amber-950 uppercase tracking-wide flex items-center gap-1.5">
+                    <Calendar className="w-3.5 h-3.5 text-amber-700" />
+                    <span>Expiry Date & Purchase Supplier Details</span>
+                  </span>
+                  <span className="text-[10px] text-amber-800 font-bold bg-amber-200/80 px-2 py-0.5 rounded border border-amber-300">
+                    High Precision
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                      Expiry Date (காலாவதி தேதி) *
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.expiry_date}
+                      onChange={(e) => setFormData({ ...formData, expiry_date: e.target.value })}
+                      className="form-input w-full text-xs font-mono font-bold"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-gray-700 mb-1">
+                      Purchase Supplier (விற்பனையாளர் / சப்ளையர்)
+                    </label>
+                    <select
+                      value={String(formData.supplier_id || '')}
+                      onChange={(e) => setFormData({ ...formData, supplier_id: e.target.value })}
+                      className="form-input w-full text-xs font-semibold"
+                    >
+                      <option value="">-- Select Supplier --</option>
+                      {suppliers.map((s) => (
+                        <option key={s.id} value={String(s.id)}>
+                          {s.name} {s.phone ? `(${s.phone})` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {/* Damaged Stock Tracking Checkbox and Inputs */}
+                <div className="pt-2 border-t border-amber-200">
+                  <label className="flex items-center gap-2 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={formData.is_damaged}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setFormData({
+                          ...formData,
+                          is_damaged: checked,
+                          damaged_quantity: checked ? (formData.damaged_quantity === '0' ? '1' : formData.damaged_quantity) : '0'
+                        });
+                      }}
+                      className="rounded border-amber-400 text-rose-600 focus:ring-rose-500 w-4 h-4"
+                    />
+                    <span className="text-xs font-bold text-gray-800">
+                      Are there any damaged or broken products in this entry? (சேதமடைந்த பொருட்கள் உள்ளதா?)
+                    </span>
+                  </label>
+
+                  {formData.is_damaged && (
+                    <div className="mt-2.5 grid grid-cols-3 gap-2 bg-white p-2.5 rounded border border-rose-300 shadow-2xs">
+                      <div>
+                        <label className="block text-[10px] font-bold text-rose-900 mb-1">
+                          Damaged Count (சேதம்) *
+                        </label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          required={formData.is_damaged}
+                          value={formData.damaged_quantity}
+                          onChange={(e) => setFormData({ ...formData, damaged_quantity: e.target.value })}
+                          className="form-input w-full text-right font-mono font-bold text-xs border-rose-400 bg-rose-50/50 text-rose-900"
+                        />
+                      </div>
+                      <div className="col-span-2">
+                        <label className="block text-[10px] font-bold text-rose-900 mb-1">
+                          Damage Reason / Notes (காரணம்)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. Broken seal, expired batch, punctured packet..."
+                          value={formData.damage_reason}
+                          onChange={(e) => setFormData({ ...formData, damage_reason: e.target.value })}
+                          className="form-input w-full text-xs border-rose-300"
+                        />
+                      </div>
+                      <div className="col-span-3 text-[10px] text-rose-700 italic">
+                        ⚠️ <b>Extreme Precision:</b> Damaged items will be kept in separate damaged inventory and will NOT be sold to customers. You can return them to the supplier from the Returns page.
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 

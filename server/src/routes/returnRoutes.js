@@ -3,8 +3,15 @@ import * as returnController from '../controllers/returnController.js';
 
 const router = Router();
 
+// Sales Returns
 router.get('/sales', returnController.getSalesReturns);
 router.post('/sales', returnController.createSalesReturn);
 
-export default router;
+// Purchase Returns (Supplier Returns for Damaged & Expired stock)
+router.get('/purchases', returnController.getPurchaseReturns);
+router.post('/purchases', returnController.createPurchaseReturn);
 
+// Damaged & Expired Products ledger for returning
+router.get('/damaged-expired', returnController.getDamagedAndExpiredStock);
+
+export default router;

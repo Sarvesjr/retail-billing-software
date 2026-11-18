@@ -36,6 +36,13 @@ export async function getAllProducts({ search = '', categoryId = null, limit = 1
       p.purchase_price,
       p.selling_price,
       p.mrp,
+      p.expiry_date,
+      p.supplier_id,
+      s.name AS supplier_name,
+      s.tamil_name AS supplier_tamil_name,
+      COALESCE(p.damaged_stock, 0) AS damaged_stock,
+      p.is_damaged,
+      p.damage_reason,
       p.min_stock_level,
       p.is_active,
       COALESCE(ps.current_stock, 0) AS current_stock,
@@ -45,6 +52,7 @@ export async function getAllProducts({ search = '', categoryId = null, limit = 1
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN units u ON p.unit_id = u.id
+    LEFT JOIN suppliers s ON p.supplier_id = s.id
     LEFT JOIN product_stock ps ON p.id = ps.product_id
     LEFT JOIN product_barcodes pb ON p.id = pb.product_id
     ${whereSql}
@@ -78,6 +86,13 @@ export async function getProductById(id) {
       p.purchase_price,
       p.selling_price,
       p.mrp,
+      p.expiry_date,
+      p.supplier_id,
+      s.name AS supplier_name,
+      s.tamil_name AS supplier_tamil_name,
+      COALESCE(p.damaged_stock, 0) AS damaged_stock,
+      p.is_damaged,
+      p.damage_reason,
       p.min_stock_level,
       p.is_active,
       COALESCE(ps.current_stock, 0) AS current_stock,
@@ -86,6 +101,7 @@ export async function getProductById(id) {
     FROM products p
     LEFT JOIN categories c ON p.category_id = c.id
     LEFT JOIN units u ON p.unit_id = u.id
+    LEFT JOIN suppliers s ON p.supplier_id = s.id
     LEFT JOIN product_stock ps ON p.id = ps.product_id
     WHERE p.id = ?
   `;
@@ -111,36 +127,66 @@ export async function createProduct(productData) {
       name,
       tamil_name,
       category_id,
-      unit_id,
+      unit_id = null,
       hsn_code,
       gst_rate = 0,
+      tax_rate,
       purchase_price = 0,
+      cost_price,
       selling_price = 0,
       mrp = 0,
+      expiry_date = null,
+      supplier_id = null,
+      is_damaged = false,
+      damaged_quantity = 0,
+      damage_reason = null,
       min_stock_level = 0,
       barcodes = [],
       opening_stock = 0
     } = productData;
 
-    // 1. Insert product
+    const finalGstRate = gst_rate !== undefined && gst_rate !== null ? Number(gst_rate) : (tax_rate !== undefined && tax_rate !== null ? Number(tax_rate) : 0);
+    const finalPurchasePrice = purchase_price !== undefined && purchase_price !== null ? Number(purchase_price) : (cost_price !== undefined && cost_price !== null ? Number(cost_price) : 0);
+    const finalSellingPrice = Number(selling_price) || 0;
+    const finalMrp = mrp !== undefined && mrp !== null ? Number(mrp) : finalSellingPrice;
+    const finalUnitId = unit_id ? Number(unit_id) : 1;
+    const finalCategoryId = category_id ? Number(category_id) : null;
+    const finalMinStock = Number(min_stock_level) || 0;
+
+    const totalEnteredStock = Number(opening_stock) || 0;
+    const damagedQty = Math.max(0, Number(damaged_quantity) || (is_damaged ? 1 : 0));
+    const salableOpeningStock = Math.max(0, totalEnteredStock - damagedQty);
+    const hasDamaged = damagedQty > 0 || Boolean(is_damaged);
+    const validExpiry = expiry_date && String(expiry_date).trim() ? String(expiry_date).slice(0, 10) : null;
+    const validSupplier = supplier_id ? Number(supplier_id) : null;
+    const validReason = damage_reason ? String(damage_reason).trim() : null;
+
+    // 1. Insert product with expiry, supplier, and damaged stock
     const insertProductSql = `
       INSERT INTO products (
         sku, name, tamil_name, category_id, unit_id,
-        hsn_code, gst_rate, purchase_price, selling_price, mrp, min_stock_level
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        hsn_code, gst_rate, purchase_price, selling_price, mrp,
+        expiry_date, supplier_id, damaged_stock, is_damaged, damage_reason,
+        min_stock_level
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
     const [prodResult] = await conn.execute(insertProductSql, [
       sku.trim(),
       name.trim(),
       tamil_name ? tamil_name.trim() : null,
-      category_id || null,
-      unit_id,
+      finalCategoryId,
+      finalUnitId,
       hsn_code ? hsn_code.trim() : null,
-      gst_rate,
-      purchase_price,
-      selling_price,
-      mrp,
-      min_stock_level
+      finalGstRate,
+      finalPurchasePrice,
+      finalSellingPrice,
+      finalMrp,
+      validExpiry,
+      validSupplier,
+      damagedQty,
+      hasDamaged,
+      validReason,
+      finalMinStock
     ]);
 
     const productId = prodResult.insertId;
@@ -159,31 +205,56 @@ export async function createProduct(productData) {
       );
     }
 
-    // 3. Initialize Stock balance table
-    const openingStockQty = Number(opening_stock) || 0;
+    // 3. Initialize Stock balance table (ONLY SALABLE STOCK CAN BE SOLD)
     await conn.execute(
       'INSERT INTO product_stock (product_id, current_stock) VALUES (?, ?)',
-      [productId, openingStockQty]
+      [productId, salableOpeningStock]
     );
 
-    // 4. Record stock movement if opening stock > 0
-    if (openingStockQty > 0) {
+    // 4. Record stock movement if salable opening stock > 0
+    if (salableOpeningStock > 0) {
       await conn.execute(
         `INSERT INTO stock_movements (
           product_id, movement_type, reference_no, quantity,
           stock_before, stock_after, cost_price, notes
         ) VALUES (?, 'OPENING', 'OPENING-STOCK', ?, 0.000, ?, ?, 'Initial opening stock entry')`,
-        [productId, openingStockQty, openingStockQty, purchase_price]
+        [productId, salableOpeningStock, salableOpeningStock, purchase_price]
       );
     }
 
-    // 5. Audit log
+    // 5. If damaged products were recorded during entry, log into damaged_stock_log
+    if (damagedQty > 0) {
+      await conn.execute(
+        `INSERT INTO damaged_stock_log (
+          product_id, product_name, supplier_id, source, damaged_quantity,
+          damage_reason, expiry_date, status
+        ) VALUES (?, ?, ?, 'PRODUCT_ENTRY', ?, ?, ?, 'PENDING_RETURN')`,
+        [
+          productId,
+          name.trim(),
+          validSupplier,
+          damagedQty,
+          validReason || 'Damaged upon initial product entry',
+          validExpiry
+        ]
+      );
+    }
+
+    // 6. Audit log
     await conn.execute(
       `INSERT INTO audit_logs (action, entity_name, entity_id, details) VALUES ('CREATE', 'PRODUCT', ?, ?)`,
-      [productId, JSON.stringify({ sku, name, opening_stock: openingStockQty })]
+      [productId, JSON.stringify({ sku, name, opening_stock: totalEnteredStock, salable_stock: salableOpeningStock, damaged_stock: damagedQty, expiry_date: validExpiry, supplier_id: validSupplier })]
     );
 
-    return { id: productId, sku, name, current_stock: openingStockQty };
+    return {
+      id: productId,
+      sku,
+      name,
+      current_stock: salableOpeningStock,
+      damaged_stock: damagedQty,
+      expiry_date: validExpiry,
+      supplier_id: validSupplier
+    };
   });
 }
 
@@ -199,6 +270,11 @@ export async function updateProduct(id, productData) {
       purchase_price,
       selling_price,
       mrp,
+      expiry_date,
+      supplier_id,
+      damaged_stock,
+      is_damaged,
+      damage_reason,
       min_stock_level,
       barcodes,
       current_stock,
@@ -212,6 +288,11 @@ export async function updateProduct(id, productData) {
     }
 
     const currentProd = existing[0];
+    const validExpiry = expiry_date !== undefined ? (expiry_date ? String(expiry_date).slice(0, 10) : null) : currentProd.expiry_date;
+    const validSupplier = supplier_id !== undefined ? (supplier_id ? Number(supplier_id) : null) : currentProd.supplier_id;
+    const newDamagedStock = damaged_stock !== undefined ? Number(damaged_stock) : Number(currentProd.damaged_stock || 0);
+    const validIsDamaged = is_damaged !== undefined ? (is_damaged ? 1 : 0) : (newDamagedStock > 0 ? 1 : currentProd.is_damaged);
+    const validReason = damage_reason !== undefined ? (damage_reason ? String(damage_reason).trim() : null) : currentProd.damage_reason;
 
     // 1. Update product table
     await conn.execute(
@@ -225,6 +306,11 @@ export async function updateProduct(id, productData) {
         purchase_price = COALESCE(?, purchase_price),
         selling_price = COALESCE(?, selling_price),
         mrp = COALESCE(?, mrp),
+        expiry_date = ?,
+        supplier_id = ?,
+        damaged_stock = ?,
+        is_damaged = ?,
+        damage_reason = ?,
         min_stock_level = COALESCE(?, min_stock_level),
         is_active = COALESCE(?, is_active)
        WHERE id = ?`,
@@ -238,11 +324,35 @@ export async function updateProduct(id, productData) {
         purchase_price !== undefined ? Number(purchase_price) : currentProd.purchase_price,
         selling_price !== undefined ? Number(selling_price) : currentProd.selling_price,
         mrp !== undefined ? Number(mrp) : currentProd.mrp,
+        validExpiry,
+        validSupplier,
+        newDamagedStock,
+        validIsDamaged,
+        validReason,
         min_stock_level !== undefined ? Number(min_stock_level) : currentProd.min_stock_level,
         is_active !== undefined ? (is_active ? 1 : 0) : null,
         id
       ]
     );
+
+    // If new damaged stock was added via product edit, record to damaged_stock_log
+    if (damaged_stock !== undefined && newDamagedStock > Number(currentProd.damaged_stock || 0)) {
+      const addedDamage = newDamagedStock - Number(currentProd.damaged_stock || 0);
+      await conn.execute(
+        `INSERT INTO damaged_stock_log (
+          product_id, product_name, supplier_id, source, damaged_quantity,
+          damage_reason, expiry_date, status
+        ) VALUES (?, ?, ?, 'AUDIT_ADJUST', ?, ?, ?, 'PENDING_RETURN')`,
+        [
+          id,
+          name || currentProd.name,
+          validSupplier,
+          addedDamage,
+          validReason || 'Damaged stock updated during product edit',
+          validExpiry
+        ]
+      );
+    }
 
     // 2. If barcode provided, ensure it is assigned to this product
     if (barcodes !== undefined) {

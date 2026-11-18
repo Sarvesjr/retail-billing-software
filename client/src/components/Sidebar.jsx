@@ -18,7 +18,8 @@ import {
   Wallet,
   BarChart3,
   UserCog,
-  Settings
+  Settings,
+  MessageSquareHeart
 } from 'lucide-react';
 
 export function Sidebar() {
@@ -39,6 +40,7 @@ export function Sidebar() {
     { to: '/purchase-returns', label: t('purchaseReturns'), icon: ArrowLeftRight },
     { to: '/outstanding', label: t('outstanding'), icon: CreditCard },
     { to: '/expenses', label: t('expenses'), icon: Wallet },
+    { to: '/feedback', label: lang === 'ta' ? 'கருத்துக்கள்' : 'Customer Feedback', icon: MessageSquareHeart },
     { to: '/reports', label: t('reports'), icon: BarChart3 },
     { to: '/users', label: t('users'), icon: UserCog },
     { to: '/settings', label: t('settings'), icon: Settings }

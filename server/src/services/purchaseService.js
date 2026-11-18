@@ -32,7 +32,11 @@ export async function getPurchaseById(id) {
   if (purchases.length === 0) return null;
 
   const [items] = await pool.query(
-    `SELECT pi.*, p.sku, u.code AS unit_code
+    `SELECT pi.*, p.sku, u.code AS unit_code,
+            COALESCE(pi.damaged_quantity, 0) AS damaged_quantity,
+            COALESCE(pi.is_damaged, FALSE) AS is_damaged,
+            pi.damage_reason,
+            pi.expiry_date
      FROM purchase_items pi
      JOIN products p ON pi.product_id = p.id
      LEFT JOIN units u ON p.unit_id = u.id
@@ -83,6 +87,10 @@ export async function createPurchase(purchaseData) {
       const lineSubtotal = qty * rate;
       const taxAmount = (lineSubtotal * gstRate) / 100;
       const lineTotal = lineSubtotal + taxAmount;
+      const damagedQty = Math.max(0, Number(item.damaged_quantity) || (item.is_damaged ? 1 : 0));
+      const isDamaged = damagedQty > 0 || Boolean(item.is_damaged);
+      const expiryDate = item.expiry_date ? String(item.expiry_date).slice(0, 10) : null;
+      const damageReason = item.damage_reason ? String(item.damage_reason).trim() : null;
 
       subtotal += lineSubtotal;
       taxTotal += taxAmount;
@@ -94,7 +102,11 @@ export async function createPurchase(purchaseData) {
         purchase_price: rate,
         gst_rate: gstRate,
         tax_amount: taxAmount,
-        line_total: lineTotal
+        line_total: lineTotal,
+        damaged_quantity: damagedQty,
+        is_damaged: isDamaged,
+        expiry_date: expiryDate,
+        damage_reason: damageReason
       });
     }
 
@@ -128,10 +140,14 @@ export async function createPurchase(purchaseData) {
 
     // 4. Insert Items, Increase Stock & Write to Stock Movements Ledger
     for (const pItem of processedItems) {
+      const damagedQty = Number(pItem.damaged_quantity) || 0;
+      const salableQty = Math.max(0, pItem.quantity - damagedQty);
+
       await conn.query(
         `INSERT INTO purchase_items (
-          purchase_id, product_id, product_name, quantity, purchase_price, gst_rate, tax_amount, line_total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          purchase_id, product_id, product_name, quantity, purchase_price, gst_rate, tax_amount, line_total,
+          expiry_date, is_damaged, damaged_quantity, damage_reason
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           purchaseId,
           pItem.product_id,
@@ -140,7 +156,11 @@ export async function createPurchase(purchaseData) {
           pItem.purchase_price,
           pItem.gst_rate,
           pItem.tax_amount,
-          pItem.line_total
+          pItem.line_total,
+          pItem.expiry_date,
+          pItem.is_damaged ? 1 : 0,
+          damagedQty,
+          pItem.damage_reason
         ]
       );
 
@@ -151,7 +171,8 @@ export async function createPurchase(purchaseData) {
       );
 
       const beforeStock = stockRows.length > 0 ? Number(stockRows[0].current_stock) : 0;
-      const afterStock = beforeStock + pItem.quantity;
+      // Precision: Only salable items enter salable stock
+      const afterStock = beforeStock + salableQty;
 
       if (stockRows.length > 0) {
         await conn.query(
@@ -165,28 +186,58 @@ export async function createPurchase(purchaseData) {
         );
       }
 
-      // Record permanent stock movement (PURCHASE INWARD)
-      await conn.query(
-        `INSERT INTO stock_movements (
-          product_id, movement_type, reference_id, reference_no,
-          quantity, stock_before, stock_after, cost_price, notes
-        ) VALUES (?, 'PURCHASE', ?, ?, ?, ?, ?, ?, ?)`,
-        [
-          pItem.product_id,
-          purchaseId,
-          purchaseNo,
-          pItem.quantity,
-          beforeStock,
-          afterStock,
-          pItem.purchase_price,
-          `Purchase Inward from Supplier #${supplier_id}`
-        ]
-      );
+      // Record permanent stock movement for salable inward
+      if (salableQty > 0) {
+        await conn.query(
+          `INSERT INTO stock_movements (
+            product_id, movement_type, reference_id, reference_no,
+            quantity, stock_before, stock_after, cost_price, notes
+          ) VALUES (?, 'PURCHASE', ?, ?, ?, ?, ?, ?, ?)`,
+          [
+            pItem.product_id,
+            purchaseId,
+            purchaseNo,
+            salableQty,
+            beforeStock,
+            afterStock,
+            pItem.purchase_price,
+            `Purchase Inward (${purchaseNo}) - Salable: ${salableQty}${damagedQty > 0 ? `, Damaged: ${damagedQty}` : ''}`
+          ]
+        );
+      }
 
-      // Also update latest purchase_price in products table if changed
+      // If damaged goods arrived, track in damaged_stock and damaged_stock_log
+      if (damagedQty > 0) {
+        await conn.query(
+          `UPDATE products SET damaged_stock = damaged_stock + ? WHERE id = ?`,
+          [damagedQty, pItem.product_id]
+        );
+
+        await conn.query(
+          `INSERT INTO damaged_stock_log (
+            product_id, product_name, supplier_id, purchase_id, source,
+            damaged_quantity, damage_reason, expiry_date, status
+          ) VALUES (?, ?, ?, ?, 'PURCHASE_ENTRY', ?, ?, ?, 'PENDING_RETURN')`,
+          [
+            pItem.product_id,
+            pItem.product_name,
+            supplier_id,
+            purchaseId,
+            damagedQty,
+            pItem.damage_reason || 'Damaged upon delivery from supplier',
+            pItem.expiry_date
+          ]
+        );
+      }
+
+      // Update product supplier, expiry date, and latest purchase price
       await conn.query(
-        `UPDATE products SET purchase_price = ? WHERE id = ?`,
-        [pItem.purchase_price, pItem.product_id]
+        `UPDATE products SET
+           purchase_price = ?,
+           supplier_id = ?,
+           expiry_date = COALESCE(?, expiry_date)
+         WHERE id = ?`,
+        [pItem.purchase_price, supplier_id, pItem.expiry_date, pItem.product_id]
       );
     }
 

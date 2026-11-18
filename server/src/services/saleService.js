@@ -10,6 +10,8 @@ export async function createSale(saleData) {
       items = [],
       payment_mode = 'CASH',
       paid_amount = null,
+      discount_type = 'NONE',
+      discount_value = 0,
       notes = null
     } = saleData;
 
@@ -36,6 +38,8 @@ export async function createSale(saleData) {
     let subtotal = 0;
     let taxTotal = 0;
     const processedItems = [];
+    const runningStockMap = new Map();
+    const productCacheMap = new Map();
 
     for (const item of items) {
       const productId = Number(item.id || item.product_id);
@@ -45,21 +49,31 @@ export async function createSale(saleData) {
         throw new Error('Invalid product or quantity in cart.');
       }
 
-      // Lock product & stock row for transaction safety
-      const [stockRows] = await conn.query(
-        `SELECT ps.current_stock, p.name, p.tamil_name, p.selling_price, p.gst_rate, p.is_active
-         FROM products p
-         JOIN product_stock ps ON p.id = ps.product_id
-         WHERE p.id = ? FOR UPDATE`,
-        [productId]
-      );
+      let prod;
+      let stockBefore;
 
-      if (stockRows.length === 0) {
-        throw new Error(`Product ID #${productId} not found.`);
+      if (runningStockMap.has(productId)) {
+        prod = productCacheMap.get(productId);
+        stockBefore = runningStockMap.get(productId);
+      } else {
+        // Lock product & stock row for transaction safety
+        const [stockRows] = await conn.query(
+          `SELECT ps.current_stock, p.name, p.tamil_name, p.selling_price, p.gst_rate, p.is_active
+           FROM products p
+           JOIN product_stock ps ON p.id = ps.product_id
+           WHERE p.id = ? FOR UPDATE`,
+          [productId]
+        );
+
+        if (stockRows.length === 0) {
+          throw new Error(`Product ID #${productId} not found.`);
+        }
+
+        prod = stockRows[0];
+        stockBefore = Number(prod.current_stock);
+        productCacheMap.set(productId, prod);
       }
 
-      const prod = stockRows[0];
-      const stockBefore = Number(prod.current_stock);
       const isActive = Boolean(prod.is_active);
 
       if (!isActive) {
@@ -75,14 +89,23 @@ export async function createSale(saleData) {
       }
 
       const stockAfter = stockBefore - qty;
-      const unitPrice = Number(item.sellingPrice || prod.selling_price);
-      const gstRate = Number(prod.gst_rate || 0);
-      const baseLinePrice = Number((unitPrice * qty).toFixed(2));
-      const taxAmount = Number(((baseLinePrice * gstRate) / 100).toFixed(2));
+      runningStockMap.set(productId, stockAfter);
+      const isFreeSample = Boolean(item.is_free_sample || item.isFreeSample);
+      const itemDiscount = isFreeSample ? 0 : Math.max(0, Number(item.discount_amount || item.discount || 0));
+      const originalPrice = Number(item.sellingPrice || prod.selling_price);
+      // For Free Sample: unit price = ₹0.00, GST = 0%, tax = 0.00, line total = 0.00
+      const unitPrice = isFreeSample ? 0 : originalPrice;
+      const gstRate = isFreeSample ? 0 : Number(prod.gst_rate || 0);
+
+      const baseLinePrice = isFreeSample ? 0 : Math.max(0, Number(((unitPrice * qty) - itemDiscount).toFixed(2)));
+      const taxAmount = isFreeSample ? 0 : Number(((baseLinePrice * gstRate) / 100).toFixed(2));
       const lineTotal = Number((baseLinePrice + taxAmount).toFixed(2));
 
       subtotal += baseLinePrice;
       taxTotal += taxAmount;
+      if (!isFreeSample && itemDiscount > 0) {
+        // Track item-level discount
+      }
 
       processedItems.push({
         productId,
@@ -99,6 +122,11 @@ export async function createSale(saleData) {
         unit_price: unitPrice,
         sellingPrice: unitPrice,
         selling_price: unitPrice,
+        originalPrice,
+        isFreeSample,
+        is_free_sample: isFreeSample,
+        discountAmount: itemDiscount,
+        discount_amount: itemDiscount,
         gstRate,
         gst_rate: gstRate,
         taxAmount,
@@ -112,7 +140,27 @@ export async function createSale(saleData) {
 
     subtotal = Number(subtotal.toFixed(2));
     taxTotal = Number(taxTotal.toFixed(2));
-    const grandTotal = Number((subtotal + taxTotal).toFixed(2));
+
+    // Calculate Bill-Level Discount
+    let normalizedDiscountType = 'NONE';
+    if (String(discount_type).toUpperCase() === 'PERCENT') {
+      normalizedDiscountType = 'PERCENT';
+    } else if (['FIXED', 'FLAT', 'RUPEES'].includes(String(discount_type).toUpperCase())) {
+      normalizedDiscountType = 'FIXED';
+    }
+
+    let billDiscount = 0;
+    const numDiscValue = Number(discount_value) || 0;
+    if (normalizedDiscountType === 'FIXED' && numDiscValue > 0) {
+      billDiscount = Math.min(subtotal, numDiscValue);
+    } else if (normalizedDiscountType === 'PERCENT' && numDiscValue > 0) {
+      billDiscount = Number(((subtotal * Math.min(100, numDiscValue)) / 100).toFixed(2));
+    }
+
+    const netSubtotal = Math.max(0, Number((subtotal - billDiscount).toFixed(2)));
+    const itemDiscountsSum = processedItems.reduce((acc, pi) => acc + (pi.discountAmount || 0), 0);
+    const totalDiscount = Number((itemDiscountsSum + billDiscount).toFixed(2));
+    const grandTotal = Number((netSubtotal + taxTotal).toFixed(2));
 
     // Validate Cash received amount (Must be >= grandTotal)
     if (payment_mode === 'CASH') {
@@ -129,8 +177,8 @@ export async function createSale(saleData) {
     const [saleResult] = await conn.execute(
       `INSERT INTO sales (
         invoice_no, customer_id, customer_name, customer_phone, subtotal, tax_total,
-        discount_total, grand_total, payment_mode, payment_status, notes, status, receipt_image_url
-      ) VALUES (?, ?, ?, ?, ?, ?, 0.00, ?, ?, 'PAID', ?, 'COMPLETED', ?)`,
+        discount_total, discount_type, discount_value, grand_total, payment_mode, payment_status, notes, status, receipt_image_url
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PAID', ?, 'COMPLETED', ?)`,
       [
         invoiceNo,
         customer_id || null,
@@ -138,6 +186,9 @@ export async function createSale(saleData) {
         customer_phone,
         subtotal,
         taxTotal,
+        totalDiscount,
+        normalizedDiscountType,
+        numDiscValue,
         grandTotal,
         payment_mode,
         notes,
@@ -153,8 +204,8 @@ export async function createSale(saleData) {
       await conn.execute(
         `INSERT INTO sale_items (
           sale_id, product_id, product_name, tamil_name, barcode,
-          quantity, unit_price, gst_rate, tax_amount, discount_amount, line_total
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0.00, ?)`,
+          quantity, unit_price, gst_rate, tax_amount, discount_amount, is_free_sample, line_total
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           saleId,
           pi.productId,
@@ -165,6 +216,8 @@ export async function createSale(saleData) {
           pi.unitPrice,
           pi.gstRate,
           pi.taxAmount,
+          pi.discountAmount,
+          pi.isFreeSample ? 1 : 0,
           pi.lineTotal
         ]
       );
@@ -176,6 +229,10 @@ export async function createSale(saleData) {
       );
 
       // Record immutable stock movement ledger
+      const movementNote = pi.isFreeSample
+        ? `Sale Invoice ${invoiceNo} (FREE SAMPLE / PROMO)`
+        : `Sale Invoice ${invoiceNo}`;
+
       await conn.execute(
         `INSERT INTO stock_movements (
           product_id, movement_type, reference_id, reference_no,
@@ -188,7 +245,7 @@ export async function createSale(saleData) {
           -pi.qty,
           pi.stockBefore,
           pi.stockAfter,
-          `Sale Invoice ${invoiceNo}`
+          movementNote
         ]
       );
     }
@@ -219,6 +276,7 @@ export async function createSale(saleData) {
         invoice_no: invoiceNo,
         customer_name,
         subtotal,
+        discount_total: totalDiscount,
         tax_total: taxTotal,
         grand_total: grandTotal,
         payment_mode,
@@ -232,16 +290,22 @@ export async function createSale(saleData) {
     }
 
     return {
+      id: saleId,
       saleId,
+      invoice_no: invoiceNo,
       invoiceNo,
-      grandTotal,
+      subtotal,
+      discountTotal: totalDiscount,
       taxTotal,
+      grandTotal,
+      total_amount: grandTotal,
       itemCount: processedItems.length,
       receiptImageUrl: `/api/sales/bills/${invoiceNo}/image`,
       items: processedItems.map(p => ({
         productId: p.productId,
         name: p.productName,
         qty: p.qty,
+        isFreeSample: p.isFreeSample,
         remainingStock: p.stockAfter
       }))
     };

@@ -19,12 +19,29 @@ import {
   X,
   Package,
   Layers,
-  UserCheck
+  UserCheck,
+  Gift,
+  Percent,
+  Tag,
+  Star,
+  MessageSquareHeart,
+  Clock
 } from 'lucide-react';
 
 export function Billing() {
   const { t, lang } = useI18n();
   const [cart, setCart] = useState([]);
+
+  // Bill-Level Discount state
+  const [discountType, setDiscountType] = useState('NONE'); // 'NONE' | 'FIXED' | 'PERCENT'
+  const [discountValue, setDiscountValue] = useState('');
+
+  // 7-Second Feedback Prompt state (Non-blocking, skippable)
+  const [feedbackPrompt, setFeedbackPrompt] = useState(null);
+  const [feedbackRating, setFeedbackRating] = useState(5);
+  const [feedbackComment, setFeedbackComment] = useState('');
+  const [feedbackCountdown, setFeedbackCountdown] = useState(7);
+  const feedbackTimerRef = useRef(null);
 
   // Customer state
   const [customers, setCustomers] = useState([]);
@@ -484,11 +501,30 @@ export function Billing() {
           qty = item.currentStock;
           setErrorMsg(`Quantity for "${item.name}" set to maximum available stock limit (${item.currentStock} ${item.unit}).`);
         }
-        const baseAmount = qty * item.sellingPrice;
-        const taxAmount = (baseAmount * item.gstRate) / 100;
+        const itemDisc = Math.min(item.sellingPrice * qty, Number(item.discountAmount) || 0);
+        const baseAmount = item.isFreeSample ? 0 : Math.max(0, (qty * item.sellingPrice) - itemDisc);
+        const taxAmount = item.isFreeSample ? 0 : ((baseAmount * item.gstRate) / 100);
         return {
           ...item,
           qty,
+          baseAmount,
+          taxAmount,
+          lineTotal: baseAmount + taxAmount
+        };
+      })
+    );
+  };
+
+  const toggleFreeSample = (id) => {
+    setCart((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) return item;
+        const nextFree = !item.isFreeSample;
+        const baseAmount = nextFree ? 0 : (item.qty * item.sellingPrice);
+        const taxAmount = nextFree ? 0 : ((baseAmount * item.gstRate) / 100);
+        return {
+          ...item,
+          isFreeSample: nextFree,
           baseAmount,
           taxAmount,
           lineTotal: baseAmount + taxAmount
@@ -501,13 +537,87 @@ export function Billing() {
     setCart((prev) => prev.filter((item) => item.id !== id));
   };
 
-  // Base Subtotal (Sum of Price * Qty without tax)
-  const subtotal = cart.reduce((acc, item) => acc + (item.sellingPrice * item.qty), 0);
-  // GST Tax Amount ((Price * Qty * GST%) / 100)
-  const taxTotal = cart.reduce((acc, item) => acc + ((item.sellingPrice * item.qty * item.gstRate) / 100), 0);
+  // 100% PRECISE BILLING MATH (Zero mix-ups between free samples, discounts, taxes, and grand totals)
+  // 1. Items Base Subtotal (Sum of Price * Qty for non-sample items minus item discounts)
+  const itemsSubtotal = cart.reduce((acc, item) => {
+    if (item.isFreeSample) return acc;
+    const itemDisc = Math.min(item.sellingPrice * item.qty, Number(item.discountAmount) || 0);
+    return acc + Math.max(0, (item.sellingPrice * item.qty) - itemDisc);
+  }, 0);
+  const subtotal = Number(itemsSubtotal.toFixed(2));
+
+  // 2. Bill-Level Discount (Flat ₹ or % Percentage of subtotal)
+  let billDiscount = 0;
+  const numDiscVal = Number(discountValue) || 0;
+  if (discountType === 'FIXED' && numDiscVal > 0) {
+    billDiscount = Math.min(subtotal, numDiscVal);
+  } else if (discountType === 'PERCENT' && numDiscVal > 0) {
+    billDiscount = Number(((subtotal * Math.min(100, numDiscVal)) / 100).toFixed(2));
+  }
+
+  const netSubtotal = Math.max(0, Number((subtotal - billDiscount).toFixed(2)));
+
+  // 3. GST Tax Amount (Calculated strictly on payable items)
+  const taxTotal = Number(cart.reduce((acc, item) => {
+    if (item.isFreeSample) return acc;
+    const itemDisc = Math.min(item.sellingPrice * item.qty, Number(item.discountAmount) || 0);
+    const itemBase = Math.max(0, (item.sellingPrice * item.qty) - itemDisc);
+    return acc + ((itemBase * item.gstRate) / 100);
+  }, 0).toFixed(2));
   const totalTax = taxTotal;
-  // Grand Total = Subtotal + GST Tax
-  const grandTotal = subtotal + taxTotal;
+
+  // 4. Combined Total Discount (Item discounts + Bill-level discount)
+  const itemDiscountsSum = cart.reduce((acc, item) => acc + (item.isFreeSample ? 0 : Number(item.discountAmount) || 0), 0);
+  const totalDiscount = Number((itemDiscountsSum + billDiscount).toFixed(2));
+
+  // 5. Net Grand Total = Net Subtotal + GST Tax
+  const grandTotal = Number((netSubtotal + taxTotal).toFixed(2));
+
+  // 7-Second Feedback Prompt Handlers (Non-blocking, auto-closing, skippable)
+  const startFeedbackPrompt = (invoiceNo, custName, custPhone) => {
+    if (feedbackTimerRef.current) clearInterval(feedbackTimerRef.current);
+    setFeedbackPrompt({
+      invoiceNo,
+      customerName: custName || 'Walk-in Customer',
+      customerPhone: custPhone || ''
+    });
+    setFeedbackRating(5);
+    setFeedbackComment('');
+    setFeedbackCountdown(7);
+
+    feedbackTimerRef.current = setInterval(() => {
+      setFeedbackCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(feedbackTimerRef.current);
+          setFeedbackPrompt(null);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+  };
+
+  const handleDismissFeedback = () => {
+    if (feedbackTimerRef.current) clearInterval(feedbackTimerRef.current);
+    setFeedbackPrompt(null);
+  };
+
+  const handleSubmitFeedback = async () => {
+    if (!feedbackPrompt) return;
+    try {
+      await api.createFeedback({
+        invoice_no: feedbackPrompt.invoiceNo,
+        customer_name: feedbackPrompt.customerName,
+        customer_phone: feedbackPrompt.customerPhone,
+        rating: feedbackRating,
+        comment: feedbackComment
+      });
+    } catch (err) {
+      console.warn('Feedback submit error:', err);
+    } finally {
+      handleDismissFeedback();
+    }
+  };
 
   const handleCheckout = async () => {
     if (cart.length === 0) return;
@@ -542,11 +652,15 @@ export function Billing() {
             : paymentMode === 'CREDIT'
             ? 0
             : grandTotal,
+        discount_type: discountType,
+        discount_value: numDiscVal,
         items: cart.map((i) => ({
           id: i.id,
           qty: i.qty,
-          sellingPrice: i.sellingPrice,
-          barcode: i.barcode
+          sellingPrice: i.isFreeSample ? 0 : i.sellingPrice,
+          barcode: i.barcode,
+          is_free_sample: Boolean(i.isFreeSample),
+          discount_amount: Number(i.discountAmount) || 0
         }))
       };
 
@@ -559,6 +673,7 @@ export function Billing() {
         customer: customerName,
         items: [...cart],
         subtotal,
+        discountTotal,
         taxTotal,
         grandTotal,
         paymentMode,
@@ -566,8 +681,14 @@ export function Billing() {
         change: paymentMode === 'CASH' && receivedAmount ? Math.max(0, Number(receivedAmount) - grandTotal) : 0
       });
 
+      // Launch 7-second Feedback Prompt for customer
+      const foundCust = customers.find((c) => String(c.id) === String(selectedCustomerId));
+      startFeedbackPrompt(res.data.invoiceNo, customerName, foundCust?.phone || '');
+
       setCart([]);
       setReceivedAmount('');
+      setDiscountType('NONE');
+      setDiscountValue('');
       setLastScannedMessage(null);
     } catch (err) {
       setErrorMsg('Checkout failed: ' + (err.message || 'Could not deduct stock'));
@@ -735,6 +856,87 @@ export function Billing() {
         )}
       </div>
 
+      {/* 7-Second Non-Blocking Post-Billing Customer Feedback Prompt */}
+      {feedbackPrompt && (
+        <div className="bg-gradient-to-r from-rose-950 via-slate-900 to-indigo-950 text-white px-4 py-2.5 shadow-lg border-b border-rose-500/50 flex items-center justify-between z-30 transition-all print:hidden">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-rose-600 rounded-full flex items-center justify-center shrink-0 border border-rose-300">
+              <MessageSquareHeart className="w-4 h-4 text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-xs uppercase tracking-wide text-rose-200">
+                  Customer Feedback:
+                </span>
+                <span className="font-mono text-xs font-bold text-white">
+                  {feedbackPrompt.invoiceNo} ({feedbackPrompt.customerName})
+                </span>
+                <span className="bg-rose-900/80 text-rose-200 text-[10px] font-mono px-2 py-0.5 rounded border border-rose-700 flex items-center gap-1 font-bold">
+                  <Clock className="w-3 h-3 text-rose-300 animate-spin" />
+                  Auto-closing in {feedbackCountdown}s
+                </span>
+              </div>
+              {/* 1-5 Star Clickable Rating */}
+              <div className="flex items-center gap-1 mt-1">
+                {[1, 2, 3, 4, 5].map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setFeedbackRating(s)}
+                    className="p-0.5 hover:scale-125 transition-transform"
+                    title={`${s} Stars`}
+                  >
+                    <Star
+                      className={`w-4 h-4 ${
+                        s <= feedbackRating ? 'fill-amber-400 text-amber-400' : 'text-gray-500'
+                      }`}
+                    />
+                  </button>
+                ))}
+                <span className="text-[11px] font-mono font-bold text-amber-300 ml-1.5">
+                  {feedbackRating} / 5 Stars
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Comment Input and Action Buttons */}
+          <div className="flex items-center gap-2 flex-1 max-w-md ml-4">
+            <input
+              type="text"
+              placeholder="Customer comments / notes (optional)..."
+              value={feedbackComment}
+              onChange={(e) => setFeedbackComment(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  handleSubmitFeedback();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  handleDismissFeedback();
+                }
+              }}
+              className="form-input text-xs py-1 px-2.5 bg-white/10 border-rose-400/40 text-white placeholder-rose-200/60 w-full focus:bg-white focus:text-gray-900 focus:border-rose-500"
+            />
+            <button
+              type="button"
+              onClick={handleSubmitFeedback}
+              className="btn-primary text-xs py-1 px-3 bg-amber-500 hover:bg-amber-400 text-blue-950 font-bold border-amber-600 shrink-0"
+            >
+              Submit
+            </button>
+            <button
+              type="button"
+              onClick={handleDismissFeedback}
+              className="text-rose-200 hover:text-white text-xs px-2 py-1 font-semibold shrink-0"
+              title="Skip feedback without saving"
+            >
+              Skip (Esc)
+            </button>
+          </div>
+        </div>
+      )}
+
       {errorMsg && (
         <div className="bg-red-50 text-red-800 text-xs px-4 py-1.5 border-b border-red-200 flex items-center gap-2 print:hidden">
           <AlertCircle className="w-3.5 h-3.5 text-red-600" />
@@ -757,13 +959,14 @@ export function Billing() {
                   <th className="text-center w-24">{t('qty')}</th>
                   <th className="text-right">{t('gst')}</th>
                   <th className="text-right">{t('total')}</th>
+                  <th className="text-center w-28">Promo / Sample</th>
                   <th className="w-10 text-center">{t('remove')}</th>
                 </tr>
               </thead>
               <tbody>
                 {cart.length === 0 ? (
                   <tr>
-                    <td colSpan="8" className="text-center py-16 text-gray-400">
+                    <td colSpan="9" className="text-center py-16 text-gray-400">
                       <ScanBarcode className="w-10 h-10 text-gray-300 mx-auto mb-2 animate-bounce" />
                       <div className="font-bold text-gray-600">{t('cartEmpty')}</div>
                       <div className="text-[11px] mt-1 text-gray-500 max-w-md mx-auto">
@@ -783,14 +986,30 @@ export function Billing() {
                   </tr>
                 ) : (
                   cart.map((item, idx) => (
-                    <tr key={item.id}>
+                    <tr key={item.id} className={item.isFreeSample ? 'bg-purple-50/50' : ''}>
                       <td className="text-center font-mono text-gray-500">{idx + 1}</td>
                       <td>
-                        <div className="font-bold text-gray-900">{item.name}</div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-bold text-gray-900">{item.name}</span>
+                          {item.isFreeSample && (
+                            <span className="bg-purple-600 text-white text-[9px] font-bold px-1.5 py-0.2 rounded font-mono">
+                              FREE SAMPLE
+                            </span>
+                          )}
+                        </div>
                         {item.tamilName && <div className="text-gray-600 text-[11px]">{item.tamilName}</div>}
                       </td>
                       <td className="font-mono text-indigo-700">{item.barcode || item.sku}</td>
-                      <td className="num-cell">₹{item.sellingPrice.toFixed(2)}</td>
+                      <td className="num-cell">
+                        {item.isFreeSample ? (
+                          <div className="flex flex-col items-end">
+                            <span className="line-through text-gray-400 text-[10px]">₹{item.sellingPrice.toFixed(2)}</span>
+                            <span className="text-purple-700 font-bold font-mono">₹0.00</span>
+                          </div>
+                        ) : (
+                          <span>₹{item.sellingPrice.toFixed(2)}</span>
+                        )}
+                      </td>
                       <td className="text-center">
                         <input
                           type="number"
@@ -807,14 +1026,41 @@ export function Billing() {
                         )}
                       </td>
                       <td className="num-cell text-gray-700">
-                        <div className="font-semibold">{item.gstRate}%</div>
-                        {item.gstRate > 0 && (
-                          <div className="text-[10px] text-gray-500 font-mono">
-                            +₹{((item.sellingPrice * item.qty * item.gstRate) / 100).toFixed(2)}
-                          </div>
+                        {item.isFreeSample ? (
+                          <span className="text-gray-400 font-mono">0% (₹0)</span>
+                        ) : (
+                          <>
+                            <div className="font-semibold">{item.gstRate}%</div>
+                            {item.gstRate > 0 && (
+                              <div className="text-[10px] text-gray-500 font-mono">
+                                +₹{((item.sellingPrice * item.qty * item.gstRate) / 100).toFixed(2)}
+                              </div>
+                            )}
+                          </>
                         )}
                       </td>
-                      <td className="num-cell font-bold text-blue-900">₹{item.lineTotal.toFixed(2)}</td>
+                      <td className="num-cell font-bold text-blue-900">
+                        {item.isFreeSample ? (
+                          <span className="text-purple-700 font-mono font-bold">₹0.00</span>
+                        ) : (
+                          <span>₹{item.lineTotal.toFixed(2)}</span>
+                        )}
+                      </td>
+                      <td className="text-center">
+                        <button
+                          type="button"
+                          onClick={() => toggleFreeSample(item.id)}
+                          className={`text-[10px] font-bold px-2 py-1 rounded border flex items-center justify-center gap-1 mx-auto transition ${
+                            item.isFreeSample
+                              ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
+                              : 'bg-white hover:bg-purple-50 text-purple-900 border-purple-300'
+                          }`}
+                          title={item.isFreeSample ? 'Remove Free Sample status' : 'Mark as Free Sample (Customer gets item at ₹0.00)'}
+                        >
+                          <Gift className="w-3 h-3 text-purple-400" />
+                          <span>{item.isFreeSample ? 'Free' : 'Sample'}</span>
+                        </button>
+                      </td>
                       <td className="text-center">
                         <button
                           onClick={() => removeItem(item.id)}
@@ -874,15 +1120,121 @@ export function Billing() {
             </select>
           </div>
 
+          {/* Discounts & Promotional Offers Card */}
+          <div className="bg-amber-50/90 border border-amber-300 rounded p-2.5 text-xs shadow-2xs">
+            <div className="flex items-center justify-between font-bold text-amber-950 mb-1.5">
+              <span className="flex items-center gap-1">
+                <Tag className="w-3.5 h-3.5 text-amber-700" />
+                <span>Bill Discount (தள்ளுபடி):</span>
+              </span>
+              {billDiscount > 0 && (
+                <span className="text-[10px] bg-amber-200 text-amber-900 px-1.5 py-0.5 rounded font-mono font-bold">
+                  -₹{billDiscount.toFixed(2)} Off
+                </span>
+              )}
+            </div>
+
+            {/* Discount Type Selector Buttons */}
+            <div className="grid grid-cols-3 gap-1 mb-2">
+              <button
+                type="button"
+                onClick={() => { setDiscountType('NONE'); setDiscountValue(''); }}
+                className={`py-1 text-[10px] font-bold rounded border text-center transition ${
+                  discountType === 'NONE'
+                    ? 'bg-amber-700 text-white border-amber-800'
+                    : 'bg-white text-gray-700 hover:bg-amber-100 border-amber-300'
+                }`}
+              >
+                None (0)
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiscountType('FIXED')}
+                className={`py-1 text-[10px] font-bold rounded border text-center transition ${
+                  discountType === 'FIXED'
+                    ? 'bg-amber-700 text-white border-amber-800'
+                    : 'bg-white text-gray-700 hover:bg-amber-100 border-amber-300'
+                }`}
+              >
+                Flat ₹ Off
+              </button>
+              <button
+                type="button"
+                onClick={() => setDiscountType('PERCENT')}
+                className={`py-1 text-[10px] font-bold rounded border text-center transition ${
+                  discountType === 'PERCENT'
+                    ? 'bg-amber-700 text-white border-amber-800'
+                    : 'bg-white text-gray-700 hover:bg-amber-100 border-amber-300'
+                }`}
+              >
+                % Percent Off
+              </button>
+            </div>
+
+            {/* Discount Value Input & Quick Presets */}
+            {discountType !== 'NONE' && (
+              <div className="space-y-1.5 pt-0.5">
+                <div className="flex items-center gap-1.5">
+                  <span className="text-gray-500 font-bold font-mono text-xs">
+                    {discountType === 'FIXED' ? '₹' : '%'}
+                  </span>
+                  <input
+                    type="number"
+                    min="0"
+                    max={discountType === 'PERCENT' ? 100 : subtotal}
+                    placeholder={discountType === 'FIXED' ? 'Enter discount amount...' : 'Enter % discount...'}
+                    value={discountValue}
+                    onChange={(e) => setDiscountValue(e.target.value)}
+                    className="form-input w-full text-right font-mono font-bold text-xs py-1 border-amber-400 bg-white"
+                  />
+                </div>
+
+                {/* Quick Presets */}
+                <div className="flex items-center gap-1 text-[10px]">
+                  <span className="text-gray-500 text-[10px]">Quick:</span>
+                  {discountType === 'FIXED' ? (
+                    <>
+                      {[10, 20, 50, 100].map((amt) => (
+                        <button
+                          key={amt}
+                          type="button"
+                          onClick={() => setDiscountValue(String(amt))}
+                          className="bg-white hover:bg-amber-200 border border-amber-300 text-amber-900 px-1.5 py-0.5 rounded font-mono font-bold"
+                        >
+                          ₹{amt}
+                        </button>
+                      ))}
+                    </>
+                  ) : (
+                    <>
+                      {[2, 5, 10, 15, 20].map((pct) => (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setDiscountValue(String(pct))}
+                          className="bg-white hover:bg-amber-200 border border-amber-300 text-amber-900 px-1.5 py-0.5 rounded font-mono font-bold"
+                        >
+                          {pct}%
+                        </button>
+                      ))}
+                    </>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           <div className="bg-blue-950 text-white p-3 rounded text-center">
             <div className="text-xs uppercase tracking-wider text-blue-200 font-bold">{t('grandTotal')}</div>
             <div className="text-3xl font-black font-mono mt-1 text-yellow-300">
               ₹{grandTotal.toFixed(2)}
             </div>
-            <div className="text-[11px] text-blue-200 mt-1 flex items-center justify-center gap-2 font-mono">
+            <div className="text-[11px] text-blue-200 mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5 font-mono">
               <span>Subtotal: ₹{subtotal.toFixed(2)}</span>
-              <span>+</span>
-              <span>GST Tax: ₹{totalTax.toFixed(2)}</span>
+              {billDiscount > 0 && (
+                <span className="text-amber-300 font-bold">- Discount: ₹{billDiscount.toFixed(2)}</span>
+              )}
+              <span>+ GST: ₹{totalTax.toFixed(2)}</span>
             </div>
           </div>
 

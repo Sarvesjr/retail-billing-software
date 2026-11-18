@@ -12,10 +12,16 @@ export const createSaleSchema = z.object({
     id: z.number().int().positive(),
     qty: z.number().positive(),
     sellingPrice: z.number().min(0).optional(),
-    barcode: z.string().optional().nullable()
+    barcode: z.string().optional().nullable(),
+    is_free_sample: z.boolean().optional().default(false),
+    isFreeSample: z.boolean().optional().default(false),
+    discount_amount: z.number().min(0).optional().default(0),
+    discount: z.number().min(0).optional().default(0)
   })).min(1, 'At least one item is required'),
   payment_mode: z.enum(['CASH', 'UPI', 'CARD', 'CREDIT']).default('CASH'),
   paid_amount: z.number().min(0).optional().nullable(),
+  discount_type: z.enum(['NONE', 'FIXED', 'PERCENT']).optional().default('NONE'),
+  discount_value: z.number().min(0).optional().default(0),
   notes: z.string().optional().nullable()
 });
 

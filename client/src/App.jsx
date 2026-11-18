@@ -20,6 +20,7 @@ import { Expenses } from './pages/Expenses';
 import { Reports } from './pages/Reports';
 import { Settings } from './pages/Settings';
 import { Users } from './pages/Users';
+import { Feedback } from './pages/Feedback';
 
 function KeyboardShortcuts() {
   const navigate = useNavigate();
@@ -72,9 +73,10 @@ export default function App() {
                   <Route path="/customers" element={<Customers />} />
                   <Route path="/inventory" element={<Inventory />} />
                   <Route path="/sales-returns" element={<SalesReturns />} />
-                  <Route path="/purchase-returns" element={<Purchases />} />
+                  <Route path="/purchase-returns" element={<SalesReturns defaultTab="supplier" />} />
                   <Route path="/outstanding" element={<Customers />} />
                   <Route path="/expenses" element={<Expenses />} />
+                  <Route path="/feedback" element={<Feedback />} />
                   <Route path="/reports" element={<Reports />} />
                   <Route path="/settings" element={<Settings />} />
                   <Route path="/users" element={<Users />} />

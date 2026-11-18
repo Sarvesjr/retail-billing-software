@@ -84,6 +84,10 @@ export function Purchases() {
           quantity: 10,
           purchase_price: Number(prod.purchase_price || 0),
           gst_rate: Number(prod.gst_rate || 0),
+          expiry_date: prod.expiry_date ? String(prod.expiry_date).slice(0, 10) : '',
+          is_damaged: false,
+          damaged_quantity: 0,
+          damage_reason: '',
           line_total: 10 * Number(prod.purchase_price || 0)
         }
       ];
@@ -401,30 +405,39 @@ export function Purchases() {
                     <tr>
                       <th className="w-10 text-center">#</th>
                       <th>Product Name</th>
-                      <th>Unit</th>
-                      <th className="w-24 text-center">Inward Qty *</th>
-                      <th className="w-28 text-right">Purchase Rate (₹) *</th>
-                      <th className="w-20 text-center">GST %</th>
-                      <th className="text-right w-28">Total (₹)</th>
+                      <th className="w-28 text-center">Expiry Date *</th>
+                      <th className="w-20 text-center">Inward Qty *</th>
+                      <th className="w-28 text-center">Damaged Qty</th>
+                      <th className="w-24 text-right">Purchase Rate (₹) *</th>
+                      <th className="w-16 text-center">GST %</th>
+                      <th className="text-right w-24">Total (₹)</th>
                       <th className="w-10 text-center">Remove</th>
                     </tr>
                   </thead>
                   <tbody>
                     {items.length === 0 ? (
                       <tr>
-                        <td colSpan="8" className="text-center py-10 text-gray-400">
+                        <td colSpan="9" className="text-center py-10 text-gray-400">
                           Search and add products above to receive inward stock.
                         </td>
                       </tr>
                     ) : (
                       items.map((i, idx) => (
-                        <tr key={i.product_id}>
+                        <tr key={i.product_id} className={i.damaged_quantity > 0 ? 'bg-rose-50/40' : ''}>
                           <td className="text-center font-mono text-gray-500">{idx + 1}</td>
                           <td>
                             <div className="font-bold text-gray-900">{i.product_name}</div>
                             <div className="font-mono text-gray-400 text-[11px]">{i.sku}</div>
                           </td>
-                          <td className="font-mono text-gray-600">{i.unit_code}</td>
+                          <td className="text-center">
+                            <input
+                              type="date"
+                              required
+                              value={i.expiry_date || ''}
+                              onChange={(e) => updateItem(i.product_id, 'expiry_date', e.target.value)}
+                              className="form-input text-xs font-mono font-bold py-0.5 w-28"
+                            />
+                          </td>
                           <td className="text-center">
                             <input
                               type="number"
@@ -434,6 +447,28 @@ export function Purchases() {
                               onChange={(e) => updateItem(i.product_id, 'quantity', e.target.value)}
                               className="form-input text-xs w-20 text-center font-bold font-mono py-0.5"
                             />
+                          </td>
+                          <td className="text-center">
+                            <input
+                              type="number"
+                              min="0"
+                              max={i.quantity}
+                              step="any"
+                              value={i.damaged_quantity || 0}
+                              onChange={(e) => updateItem(i.product_id, 'damaged_quantity', e.target.value)}
+                              className={`form-input text-xs w-20 text-center font-bold font-mono py-0.5 ${
+                                Number(i.damaged_quantity) > 0 ? 'border-rose-400 text-rose-700 bg-rose-50' : ''
+                              }`}
+                            />
+                            {Number(i.damaged_quantity) > 0 && (
+                              <input
+                                type="text"
+                                placeholder="Damage reason..."
+                                value={i.damage_reason || ''}
+                                onChange={(e) => updateItem(i.product_id, 'damage_reason', e.target.value)}
+                                className="form-input text-[10px] w-28 mt-1 border-rose-300"
+                              />
+                            )}
                           </td>
                           <td className="text-right">
                             <input
